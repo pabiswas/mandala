@@ -1,5 +1,6 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { 
   KeyboardAvoidingView,
   Platform,
@@ -11,12 +12,133 @@ import {
   View
  } from 'react-native';
 
-export default function App() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+const USER_NAME_STORAGE_KEY = 'mandala:userName';
 
-  const canContinue = email.trim().length > 0 && password.length > 0;
+export default function App() {
+  const [name, setName] = useState('');
+  const [savedName, setSavedName] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  const canContinue = name.trim().length > 0;
   
+  useEffect(() => {
+    async function loadSavedName() {
+      try {
+        const storedName = await AsyncStorage.getItem(USER_NAME_STORAGE_KEY);
+        setSavedName(storedName);
+      } catch (error) {
+        console.error('Error loading saved name:', error);
+        setErrorMessage('Could not load your saved name. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadSavedName();
+  }, []);
+
+  async function saveName() {
+    const trimmedName = name.trim();
+
+    if (!trimmedName) {
+      return;
+    }
+
+    setIsSaving(true);
+    setErrorMessage('');
+    
+    try {
+      await AsyncStorage.setItem(USER_NAME_STORAGE_KEY, trimmedName);
+      setSavedName(trimmedName);
+    } catch (error) {
+      console.error('Error saving name:', error);
+      setErrorMessage('Could not save your name. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function resetName() {
+    setIsSaving(true);
+    setErrorMessage('');
+
+    try {
+      await AsyncStorage.removeItem(USER_NAME_STORAGE_KEY);
+      setName('');
+      setSavedName(null);
+    } catch (error) {
+      console.error('Error resetting name:', error);
+      setErrorMessage('Could not reset your name. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar style="dark" />
+        <View style={styles.centeredState}>
+          <Text style={styles.errorText}>48-day sadhana tracker</Text>
+          <Text style={styles.loadingText}>Preparing your mandala...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (savedName) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar style="dark" />
+        <View style={styles.keyboardView}>
+          <View style={styles.header}>
+            <View style={styles.ornament}>
+              <View style={styles.ornamentRule} />
+              <Text style={styles.ornamentGlyph}>✻</Text>
+              <View style={styles.ornamentRule} />
+            </View>
+
+            <Text style={styles.eyebrow}>Welcome back</Text>
+            <Text style={styles.title}>{savedName}</Text>
+            <Text style={styles.subtitle}>
+              Your mandala setup has started. Next we can add your practice, start date,
+              and daily tracking. 
+            </Text>
+          </View>
+
+          <View style={styles.card}>
+            <View style={styles.mandalaBadge}>
+              <Text style={styles.mandalaBadgeText}>Day 1 of 48</Text>
+            </View>
+
+            <Text style={styles.helperText}>
+              Your name is saved locally on this device. The name setup screen will
+              skipped next time you open the app.
+            </Text>
+
+            <Pressable
+              accessibilityRole="button"
+              disabled={isSaving}
+              onPress={resetName}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.secondaryButtonText}>Reset Name</Text>
+            </Pressable>
+
+            {errorMessage ? (
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            ) : null}
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
@@ -34,8 +156,7 @@ export default function App() {
           <Text style={styles.eyebrow}>48-day sadhana tracker</Text>
           <Text style={styles.title}>Mandala</Text>
           <Text style={styles.subtitle}>
-            Sign in to continue your daily practice with discipline, devotion, and a steady
-            record of your commitment.
+            Begin with your name. Your practice, start date and daily tracking is coming. 
           </Text>
         </View>
 
@@ -45,48 +166,40 @@ export default function App() {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Email</Text>
+            <Text style={styles.label}>Your name</Text>
             <TextInput
-              autoCapitalize="none"
-              autoComplete="email"
-              keyboardType="email-address"
-              onChangeText={setEmail}
-              placeholder="you@example.com"
+              autoCapitalize="words"
+              autoComplete="name"
+              onChangeText={setName}
+              placeholder="Enter your name"
               placeholderTextColor={theme.textSecondary}
+              returnKeyType="done"
               style={styles.input}
-              value={email}
-            />
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              autoCapitalize="none"
-              onChangeText={setPassword}
-              placeholder="Enter your password"
-              placeholderTextColor={theme.textSecondary}
-              secureTextEntry
-              style={styles.input}
-              value={password}
+              value={name}
             />
           </View>
 
           <Pressable
             accessibilityRole="button"
-            disabled={!canContinue}
+            disabled={!canContinue || isSaving}
+            onPress={saveName}
             style={({ pressed }) => [
               styles.primaryButton,
-              !canContinue && styles.primaryButtonDisabled,
-              pressed && canContinue && styles.pressed,
+              (!canContinue || isSaving) && styles.primaryButtonDisabled,
+              pressed && canContinue && !isSaving && styles.pressed,
             ]}
           >
-            <Text style={styles.primaryButtonText}>Begin tracking</Text>
+            <Text style={styles.primaryButtonText}>{isSaving ? 'Saving...' : 'Continue'}</Text>
           </Pressable>
 
           <Text style={styles.helperText}>
-            This is a private single-user login shell. We can wire storage and the 48-day
-            mandala flow after the screens are designed.
+            No account or password yet. This is a private first-launch setup for a single
+            user's mandala.
           </Text>
+
+          {errorMessage ? (
+            <Text style={styles.errorText}>{errorMessage}</Text>
+          ) : null}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -117,6 +230,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
     paddingVertical: 32,
+  },
+  centeredState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 24,
   },
   header: {
     alignItems: 'center',
@@ -237,13 +357,41 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 20,
   },
+  secondaryButton: {
+    alignItems: 'center',
+    borderColor: theme.rule,
+    borderRadius: 6,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 52,
+  },
+  secondaryButtonText: {
+    color: theme.marigoldDeep,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
   pressed: {
     opacity: 0.75,
+  },
+  loadingText: {
+    color: theme.text,
+    fontFamily: Platform.select({ ios: 'ui-serif', default: 'serif' }),
+    fontSize: 22,
+    lineHeight: 32,
+    textAlign: 'center',
   },
   helperText: {
     color: theme.textSecondary,
     fontSize: 14,
     fontWeight: '500',
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  errorText: {
+    color: theme.clay,
+    fontSize: 14,
+    fontWeight: '700',
     lineHeight: 20,
     textAlign: 'center',
   },
