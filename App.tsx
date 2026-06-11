@@ -192,6 +192,7 @@ export default function App() {
                     onPress={createPractice}
                     style={({ pressed }) => [
                       styles.primaryButton,
+                      styles.actionRowButton,
                       (!canCreatePractice || isSaving) && styles.primaryButtonDisabled,
                       pressed && canCreatePractice && !isSaving && styles.pressed,
                     ]}
@@ -475,9 +476,14 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     gap: 8,
+    width: '100%',
   },
   actionRowButton: {
-    flex: 1,
+    flexBasis: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    marginTop: 0,
+    marginBottom: 0,
   },
   label: {
     color: theme.text,
