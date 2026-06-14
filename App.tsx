@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { 
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   SafeAreaView,
@@ -10,7 +11,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View
+  View,
  } from 'react-native';
 
 const USER_NAME_STORAGE_KEY = 'mandala:userName';
@@ -38,12 +39,14 @@ export default function App() {
   const [practiceName, setPracticeName] = useState('');
   const [practices, setPractices] = useState<Practice[]>([]);
   const [isCreatingPractice, setIsCreatingPractice] = useState(false);
+  const [pendingDeletePracticeId, setPendingDeletePracticeId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const canContinue = name.trim().length > 0;
   const canCreatePractice = practiceName.trim().length > 0;
+  const pendingDeletePractice = practices.find((practice) => practice.id === pendingDeletePracticeId);
   
   useEffect(() => {
     async function loadSavedData() {
@@ -156,6 +159,10 @@ export default function App() {
        setIsSaving(false);
      }
    }
+
+  function confirmDeletePractice(practiceId: string) {
+    setPendingDeletePracticeId(practiceId);
+  }
 
   async function deletePractice(practiceId: string) {
     const nextPractices = practices.filter((practice) => practice.id !== practiceId);
@@ -311,7 +318,7 @@ export default function App() {
                     key={practice.id}
                     isSaving={isSaving}
                     onCompleteToday={completePracticeToday}
-                    onDelete={deletePractice}
+                    onDelete={confirmDeletePractice}
                     practice={practice}
                   />
                 ))}
@@ -319,6 +326,61 @@ export default function App() {
             )}
           </View>
         </ScrollView>
+
+        <Modal
+          animationType="fade"
+          onRequestClose={() => setPendingDeletePracticeId(null)}
+          transparent
+          visible={Boolean(pendingDeletePractice)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.confirmDialog}>
+              <View style={styles.mandalaBadge}>
+                <Text style={styles.mandalaBadgeText}>Confirm delete</Text>
+              </View>
+
+              <Text style={styles.confirmTitle}>Delete practice?</Text>
+              <Text style={styles.confirmMessage}>
+                {`This will remove "${pendingDeletePractice?.name}" and its progress.`}
+              </Text>
+
+              <View style={styles.actionRow}>
+                <Pressable
+                  accessibilityRole='button'
+                  disabled={isSaving}
+                  onPress={() => setPendingDeletePracticeId(null)}
+                  style={({ pressed }) => [
+                    styles.secondaryButton,
+                    styles.actionRowButton,
+                    isSaving && styles.primaryButtonDisabled,
+                    pressed && !isSaving && styles.pressed,
+                  ]}
+                >
+                  <Text style={styles.secondaryButtonText}>Cancel</Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityRole='button'
+                  disabled={isSaving || !pendingDeletePractice}
+                  onPress={() => {
+                    if (pendingDeletePractice) {
+                      void deletePractice(pendingDeletePractice.id);
+                    }
+                  }}
+                  style={({ pressed }) => [
+                    styles.dangerButton,
+                    styles.actionRowButton,
+                    (isSaving || !pendingDeletePractice) && styles.primaryButtonDisabled,
+                    pressed && !isSaving && pendingDeletePractice && styles.pressed,
+                  ]}
+                  >
+                    <Text style={styles.primaryButtonText}>{isSaving ? 'Deleting...' : 'Delete'}</Text>
+                  </Pressable>
+
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -625,6 +687,15 @@ const styles = StyleSheet.create({
     marginTop: 4,
     minHeight: 52,
   },
+  dangerButton: {
+    alignItems: 'center',
+    backgroundColor: theme.clay,
+    borderColor: theme.clay,
+    borderRadius: 6,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 52,
+  },
   primaryButtonDisabled: {
     opacity: 0.45,
   },
@@ -664,6 +735,41 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     lineHeight: 20,
     textAlign: 'center',
+  },
+  modalOverlay: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(31, 22, 17, 0.42)',
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  confirmDialog: {
+    backgroundColor: theme.backgroundElement,
+    borderColor: theme.rule,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 16,
+    maxWidth: 400,
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+    shadowColor: '#1F1611',
+    shadowOffset: { width: 0, height: 18},
+    shadowOpacity: 0.24,
+    shadowRadius: 24,
+    width: '100%',
+  },
+  confirmTitle: {
+    color: theme.text,
+    fontFamily: Platform.select( { ios: 'ui-serif', default: 'serif' }),
+    fontSize: 26,
+    fontWeight: '600',
+    lineHeight: 34,
+  },
+  confirmMessage: {
+    color: theme.textSecondary,
+    fontSize: 15,
+    fontWeight: '500',
+    lineHeight: 22,
   },
   sectionTitle: {
     color: theme.text,
