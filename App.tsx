@@ -22,7 +22,15 @@ type Practice = {
   startedAt: string;
   daysCompleted: number;
   durationDays: number;
+  lastCompletedAt?: string;
 };
+
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 export default function App() {
   const [name, setName] = useState('');
@@ -114,6 +122,56 @@ export default function App() {
     }
   }
 
+  async function completePracticeToday(practiceId: string) {
+    const today = getLocalDateKey();
+    const practice = practices.find((item) => item.id === practiceId);
+
+    if (
+      !practice ||
+      practice.lastCompletedAt === today ||
+      practice.daysCompleted >= practice.durationDays
+    ) {
+      return;
+    }
+
+    const nextPractices = practices.map((item) => 
+      item.id === practiceId
+        ? {
+          ...item,
+          daysCompleted: Math.min(item.daysCompleted + 1, item.durationDays),
+          lastCompletedAt: today,
+          }
+         : item,
+    );
+
+    setIsSaving(true);
+    setErrorMessage('');
+
+    try {
+       await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(nextPractices));
+       setPractices(nextPractices);
+     } catch (error) {
+       setErrorMessage('Could not update your practice. Please try again.');
+     } finally {
+       setIsSaving(false);
+     }
+   }
+
+  async function deletePractice(practiceId: string) {
+    const nextPractices = practices.filter((practice) => practice.id !== practiceId);
+
+    setIsSaving(true);
+    setErrorMessage('');
+    
+    try {
+      await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(nextPractices));
+      setPractices(nextPractices);
+    } catch (error) {
+      setErrorMessage('Could not delete your practice. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   // async function resetName() {
   //   setIsSaving(true);
@@ -249,7 +307,13 @@ export default function App() {
             ) : (
               <View style={styles.practiceList}>
                 {practices.map(practice => (
-                  <PracticeCard key={practice.id} practice={practice} />
+                  <PracticeCard
+                    key={practice.id}
+                    isSaving={isSaving}
+                    onCompleteToday={completePracticeToday}
+                    onDelete={deletePractice}
+                    practice={practice}
+                  />
                 ))}
               </View>
             )}
@@ -321,26 +385,76 @@ export default function App() {
   );
 }
 
-function PracticeCard({ practice }: { practice: Practice }) {
-  const progress = Math.round((practice.daysCompleted / practice.durationDays) * 100);
-  const startedAt = new Date(practice.startedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+function PracticeCard({
+    isSaving,
+    onCompleteToday,
+    onDelete,
+    practice,
+}: {
+    isSaving: boolean;
+    onCompleteToday: (practiceId: string) => void;
+    onDelete: (practiceId: string) => void;
+    practice: Practice;
+}) {
+    const progress = Math.round((practice.daysCompleted / practice.durationDays) * 100);
+    const startedAt = new Date(practice.startedAt).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+    const isComplete = practice.daysCompleted >= practice.durationDays;
+    const isCompletedToday = practice.lastCompletedAt === getLocalDateKey();
+    const canCompleteToday = !isSaving && !isComplete && !isCompletedToday;
+    const statusText = isComplete
+      ? 'Mandala Complete'
+      : isCompletedToday
+        ? 'Completed today'
+        : 'Tap to mark today complete';
 
-  return (
-    <View style={styles.practiceCard}>
-      <View style={styles.flowerMark}>
-        <Text style={styles.flowerText}>🌼</Text>
-      </View>
+    return (
+      <View style={styles.practiceCard}>
+        <Pressable
+          accessibilityHint={statusText}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: !canCompleteToday }}
+          disabled={!canCompleteToday}
+          onPress={() => onCompleteToday(practice.id)}
+          style={({ pressed }) => [
+            styles.practiceTapArea,
+            !canCompleteToday && styles.practiceTapAreaDisabled,
+            pressed && styles.pressed,
+          ]}
+        >
+          <View style={styles.flowerMark}>
+            <Text style={styles.flowerText}>✻</Text>
+          </View>
 
-      <View style={styles.practiceDetails}>
-        <Text style={styles.practiceName}>{practice.name}</Text>
-        <Text style={styles.practiceMeta}>
-          Started on {startedAt} Day {practice.daysCompleted + 1} of {practice.durationDays}
-        </Text>
+          <View style={styles.practiceDetails}>
+            <Text style={styles.practiceName}>{practice.name}</Text>
+            <Text style={styles.practiceMeta}>
+              Started {startedAt} . {practice.daysCompleted} of {practice.durationDays} days complete
+            </Text>
+            <Text style={styles.practiceStatus}>{statusText}</Text>
 
-        <View style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${Math.max(progress, 4)}%` }]} />
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${Math.max(progress, 4)}%` }]} />
+          </View>
         </View>
-      </View>
+      </Pressable>
+
+      <Pressable
+        accessibilityHint={`Delete ${practice.name}`}
+        accessibilityRole="button"
+        disabled={isSaving}
+        onPress={() => onDelete(practice.id)}
+        style={({ pressed }) => [
+          styles.deleteButton,
+          isSaving && styles.deleteButtonDisabled,
+          pressed && !isSaving && styles.pressed,
+        ]}
+      >
+        <Text style={styles.deleteButtonText}>Delete</Text>
+      </Pressable>
     </View>
   );
 }
@@ -483,7 +597,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     flexShrink: 1,
     marginTop: 0,
-    marginBottom: 0,
+    minWidth: 0,
   },
   label: {
     color: theme.text,
@@ -591,6 +705,15 @@ const styles = StyleSheet.create({
     gap: 14,
     padding: 14,
   },
+  practiceTapArea: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 14,
+  },
+  practiceTapAreaDisabled: {
+    opacity: 0.72,
+  },
   flowerMark: {
     alignItems: 'center',
     backgroundColor: theme.backgroundSelected,
@@ -622,6 +745,14 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     lineHeight: 18,
   },
+  practiceStatus: {
+    color: theme.peacock,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    lineHeight: 16,
+    textTransform: 'uppercase',
+  },
   progressTrack: {
     backgroundColor: theme.backgroundSelected,
     borderRadius: 999,
@@ -632,6 +763,24 @@ const styles = StyleSheet.create({
     backgroundColor: theme.peacock,
     borderRadius: 999,
     height: '100%',
+  },
+  deleteButton: {
+    alignItems: 'center',
+    borderColor: theme.rule,
+    borderRadius: 6,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 40,
+    paddingHorizontal: 12,
+ },
+  deleteButtonDisabled: {
+    opacity: 0.45,
+  },
+  deleteButtonText: {
+    color: theme.clay,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
   },
   errorText: {
     color: theme.clay,
