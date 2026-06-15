@@ -40,6 +40,7 @@ export default function App() {
   const [practices, setPractices] = useState<Practice[]>([]);
   const [isCreatingPractice, setIsCreatingPractice] = useState(false);
   const [pendingDeletePracticeId, setPendingDeletePracticeId] = useState<string | null>(null);
+  const [googleSignInMessage, setGoogleSignInMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -90,6 +91,13 @@ export default function App() {
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function startGoogleSignIn() {
+    setErrorMessage('');
+    setGoogleSignInMessage(
+      'Google sign in starts here. Next step: connect the native Google token exchange.',
+    );
   }
 
   async function createPractice() {
@@ -163,7 +171,7 @@ export default function App() {
   function confirmDeletePractice(practiceId: string) {
     setPendingDeletePracticeId(practiceId);
   }
-
+ 
   async function deletePractice(practiceId: string) {
     const nextPractices = practices.filter((practice) => practice.id !== practiceId);
 
@@ -173,6 +181,7 @@ export default function App() {
     try {
       await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(nextPractices));
       setPractices(nextPractices);
+      setPendingDeletePracticeId(null);
     } catch (error) {
       setErrorMessage('Could not delete your practice. Please try again.');
     } finally {
@@ -409,6 +418,26 @@ export default function App() {
         <View style={styles.card}>
           <View style={styles.mandalaBadge}>
             <Text style={styles.mandalaBadgeText}>Day 1 of 48</Text>
+          </View>
+
+          <Pressable
+            accessibilityHint='Start Google sign-in for syncing your practices'
+            accessibilityRole='button'
+            onPress={startGoogleSignIn}
+            style={({ pressed }) => [styles.googleButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.googleGlyph}>G</Text>
+            <Text style={styles.googleButtonText}>Continue with Google</Text>
+          </Pressable>
+
+          {googleSignInMessage ? (
+            <Text style={styles.syncStatusText}>{googleSignInMessage}</Text>
+          ) : null }
+
+          <View style={styles.dividerRow}>
+            <View style={styles.dividerRule} />
+            <Text style={styles.dividerText}>or continue locally</Text>
+            <View style={styles.dividerRule} />
           </View>
 
           <View style={styles.fieldGroup}>
@@ -676,6 +705,61 @@ const styles = StyleSheet.create({
     fontSize: 16,
     minHeight: 52,
     paddingHorizontal: 16,
+  },
+  googleButton: {
+    alignItems: 'center',
+    backgroundColor: theme.backgroundElement,
+    borderColor: theme.rule,
+    borderRadius: 6,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'center',
+    minHeight: 52,
+    paddingHorizontal: 16,
+  },
+  googleGlyph: {
+    color: theme.clay,
+    fontSize: 18,
+    fontWeight: '800',
+    lineHeight: 22,
+  },
+  googleButtonText: {
+    color: theme.text,
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+  },
+  syncStatusText: {
+    backgroundColor: theme.backgroundSelected,
+    borderColor: theme.rule,
+    borderRadius: 6,
+    borderWidth: 1,
+    color: theme.peacock,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 19,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    textAlign: 'center',
+  },
+  dividerRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  dividerRule: {
+    backgroundColor: theme.rule,
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    color: theme.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    lineHeight: 16,
+    textTransform: 'uppercase',
   },
   primaryButton: {
     alignItems: 'center',
