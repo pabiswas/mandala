@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as AuthSession from 'expo-auth-session';
 import { StatusBar } from 'expo-status-bar';
+import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useState } from 'react';
 import { 
   KeyboardAvoidingView,
@@ -13,9 +15,18 @@ import {
   TextInput,
   View,
  } from 'react-native';
+ import appConfig from './app.json';
+
+ WebBrowser.maybeCompleteAuthSession();
 
 const USER_NAME_STORAGE_KEY = 'mandala:userName';
 const PRACTICES_STORAGE_KEY = 'mandala:practices';
+const APP_SESSION_STORAGE_KEY = 'mandala:appSession';
+const RITAM_YOGA_API_BASE_URL = 'https://ritamyoga.in';
+const GOOGLE_DISCOVERY = {
+  authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+};
+const GOOGLE_WEB_CLIENT_ID = appConfig.expo.extra.googleWebClientId;
 
 type Practice = {
   id: string;
@@ -26,11 +37,94 @@ type Practice = {
   lastCompletedAt?: string;
 };
 
+type AppSession = {
+  accessToken: string;
+  user: {
+    id: string;
+    email?: string;
+    name?: string;
+  };
+};
+
+function getSessionDisplayName(session: Partial<AppSession>) {
+  return session.user?.name ?? session.user?.email ?? null;
+}
+
 function getLocalDateKey(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function createNonce() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+}
+async function getGoogleIdentityToken(): Promise<string> {
+  if (Platform.OS === 'web') {
+    return signInWithGoogleBrowser();
+  }
+
+  return signInWithGoogleNative();
+}
+
+async function signInWithGoogleBrowser(): Promise<string> {
+  if (!GOOGLE_WEB_CLIENT_ID) {
+    throw new Error('Browser Google sign-in needs expo-auth-session and a Google web client ID.');
+  }
+
+  const request = new AuthSession.AuthRequest({
+    clientId: GOOGLE_WEB_CLIENT_ID,
+    extraParams: {
+      nonce: createNonce(),
+      prompt: 'select_account',
+    },
+    redirectUri: AuthSession.makeRedirectUri(),
+    responseType: AuthSession.ResponseType.IdToken,
+    scopes: ['openid', 'profile', 'email'],
+  });
+
+  const result = await request.promptAsync(GOOGLE_DISCOVERY);
+
+  if (result.type !== 'success') {
+    throw new Error('Google sign-in was cancelled or could not complete.');
+  }
+
+  const idToken = result.params.id_token;
+
+  if(!idToken) {
+    throw new Error('Google sign-in did not return an ID token.');
+  }
+
+  return idToken;
+}
+
+async function signInWithGoogleNative(): Promise<string> {
+  throw new Error(
+    'Native Google sign-in needs @react-native-google-signin/google-signin and a development build.'
+  )
+}
+
+async function exchangeGoogleTokenWithRITAM(idToken: string): Promise<AppSession> {
+  const response = await fetch(`${RITAM_YOGA_API_BASE_URL}/api/auth/google`, {
+    body: JSON.stringify({ idToken }),
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+  });
+
+  if(!response.ok) {
+    throw new Error('Ritam sign-in failed. Please try again.');
+  }
+
+  const session = (await response.json()) as Partial<AppSession>;
+
+  if (!session.accessToken || !session.user?.id) {
+    throw new Error('Ritam sign-in returned an unexpected response.');
+  }
+
+  return session as AppSession;
 }
 
 export default function App() {
@@ -41,6 +135,7 @@ export default function App() {
   const [isCreatingPractice, setIsCreatingPractice] = useState(false);
   const [pendingDeletePracticeId, setPendingDeletePracticeId] = useState<string | null>(null);
   const [googleSignInMessage, setGoogleSignInMessage] = useState('');
+  const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -52,12 +147,17 @@ export default function App() {
   useEffect(() => {
     async function loadSavedData() {
       try {
-        const [storedName, storedPractices] = await Promise.all([
+        const [storedName, storedPractices, storedSession ] = await Promise.all([
           AsyncStorage.getItem(USER_NAME_STORAGE_KEY),
           AsyncStorage.getItem(PRACTICES_STORAGE_KEY),
+          AsyncStorage.getItem(APP_SESSION_STORAGE_KEY),
         ]);
 
-        setSavedName(storedName);
+        const sessionName = storedSession
+          ? getSessionDisplayName(JSON.parse(storedSession) as Partial<AppSession>)
+          : null;
+
+        setSavedName(storedName ?? sessionName);
 
         if (storedPractices) {
           setPractices(JSON.parse(storedPractices));
@@ -90,6 +190,27 @@ export default function App() {
       setErrorMessage('Could not save your name. Please try again.');
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function signInWithGoogle() {
+    setErrorMessage('');
+    setIsGoogleSigningIn(true);
+    setGoogleSignInMessage('Starting Google sign-in...');
+
+    try {
+      const idToken = await getGoogleIdentityToken();
+      const session = await exchangeGoogleTokenWithRITAM(idToken);
+
+      await AsyncStorage.setItem(APP_SESSION_STORAGE_KEY, JSON.stringify(session));
+      setSavedName(session.user.name ?? session.user.email ?? 'RITAM student');
+      setGoogleSignInMessage('Signed in. Practice sync can now use your RITAM session.')
+    } catch (error) {
+      setGoogleSignInMessage(
+        error instanceof Error ? error.message : 'Could not start Google sign-in. Please try again.',
+      );``
+    } finally {
+      setIsGoogleSigningIn(false);
     }
   }
 
@@ -423,11 +544,18 @@ export default function App() {
           <Pressable
             accessibilityHint='Start Google sign-in for syncing your practices'
             accessibilityRole='button'
-            onPress={startGoogleSignIn}
-            style={({ pressed }) => [styles.googleButton, pressed && styles.pressed]}
+            disabled={isGoogleSigningIn}
+            onPress={signInWithGoogle}
+            style={({ pressed }) => [
+              styles.googleButton,
+              isGoogleSigningIn && styles.primaryButtonDisabled,
+              pressed && !isGoogleSigningIn && styles.pressed
+            ]}
           >
             <Text style={styles.googleGlyph}>G</Text>
-            <Text style={styles.googleButtonText}>Continue with Google</Text>
+            <Text style={styles.googleButtonText}>
+              {isGoogleSigningIn ? 'Starting Google...' : 'Continue with Google'}
+            </Text>
           </Pressable>
 
           {googleSignInMessage ? (
@@ -466,6 +594,11 @@ export default function App() {
           >
             <Text style={styles.primaryButtonText}>{isSaving ? 'Saving...' : 'Continue'}</Text>
           </Pressable>
+
+          <Text style={styles.helperText}>
+            Google sync will use your Ritam account. Local setup keeps this mandala on
+            this device for now.
+          </Text>
 
           {errorMessage ? (
             <Text style={styles.errorText}>{errorMessage}</Text>

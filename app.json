@@ -25,6 +25,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-web-browser"
+    ],
+    "extra": {
+      "googleWebClientId": "580845046464-f64mv5gd13tr5bchbeijjhlbdqmqjhpd.apps.googleusercontent.com"
     }
   }
 }
