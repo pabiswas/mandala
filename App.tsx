@@ -21,7 +21,7 @@ import {
 
 const USER_NAME_STORAGE_KEY = 'mandala:userName';
 const PRACTICES_STORAGE_KEY = 'mandala:practices';
-const APP_SESSION_STORAGE_KEY = 'mandala:appSession';
+const RITAM_SESSION_STORAGE_KEY = 'ritam_session';
 const RITAM_YOGA_API_BASE_URL = 'https://ritamyoga.in';
 const GOOGLE_DISCOVERY = {
   authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
@@ -39,11 +39,16 @@ type Practice = {
 
 type AppSession = {
   accessToken: string;
-  user: {
+  user?: {
     id: string;
     email?: string;
     name?: string;
   };
+};
+
+type RITAMAuthResponse = {
+  token?: string;
+  user?: AppSession['user'];
 };
 
 function getSessionDisplayName(session: Partial<AppSession>) {
@@ -100,14 +105,44 @@ async function signInWithGoogleBrowser(): Promise<string> {
 }
 
 async function signInWithGoogleNative(): Promise<string> {
-  throw new Error(
-    'Native Google sign-in needs @react-native-google-signin/google-signin and a development build.'
-  )
+  if (!GOOGLE_WEB_CLIENT_ID) {
+    throw new Error("Native Google sign-in needs googleWebClientId in app.json.");
+  }
+
+ const { GoogleSignin, isCancelledResponse, isSuccessResponse } = await import(
+  '@react-native-google-signin/google-signin'
+ );
+ GoogleSignin.configure({
+  scopes: ['profile', 'email'],
+  webClientId: GOOGLE_WEB_CLIENT_ID,
+ });
+
+ if (Platform.OS === 'android') {
+  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+ }
+
+ const response = await GoogleSignin.signIn();
+
+ if (isCancelledResponse(response)) {
+  throw new Error('Google sign-in was cancelled.');
+ }
+
+ if(!isSuccessResponse(response)) {
+  throw new Error('Google sign-in could not complete.');
+ }
+
+ const idToken = response.data.idToken ?? (await GoogleSignin.getTokens()).idToken;
+
+ if (!idToken) {
+  throw new Error('Google sign-in did not return an ID token.');
+ }
+
+ return idToken;
 }
 
 async function exchangeGoogleTokenWithRITAM(idToken: string): Promise<AppSession> {
   const response = await fetch(`${RITAM_YOGA_API_BASE_URL}/api/auth/google`, {
-    body: JSON.stringify({ idToken }),
+    body: JSON.stringify({ credential: idToken }),
     headers: {
       'Content-Type': 'application/json',
     },
@@ -118,13 +153,48 @@ async function exchangeGoogleTokenWithRITAM(idToken: string): Promise<AppSession
     throw new Error('Ritam sign-in failed. Please try again.');
   }
 
-  const session = (await response.json()) as Partial<AppSession>;
+  const data = (await response.json()) as RITAMAuthResponse;
 
-  if (!session.accessToken || !session.user?.id) {
-    throw new Error('Ritam sign-in returned an unexpected response.');
+  if (!data.token) {
+    throw new Error('RITAM sign-in returned and unexpected response.');
   }
 
-  return session as AppSession;
+  return {
+    accessToken: data.token,
+    user: data.user,
+  }
+}
+
+async function getStoredRITAMSessionToken() {
+  if (Platform.OS === 'web') {
+    return AsyncStorage.getItem(RITAM_SESSION_STORAGE_KEY);
+  }
+
+  const SecureStore = await import('expo-secure-store');
+  const isSecureStoreAvailable = await SecureStore.isAvailableAsync();
+
+  if (!isSecureStoreAvailable) {
+    return AsyncStorage.getItem(RITAM_SESSION_STORAGE_KEY);
+  }
+
+  return SecureStore.getItemAsync(RITAM_SESSION_STORAGE_KEY);
+}
+
+async function saveRITAMSessionToken(token: string) {
+  if (Platform.OS === 'web') {
+    await AsyncStorage.setItem(RITAM_SESSION_STORAGE_KEY, token);
+    return;
+  }
+
+  const SecureStore = await import('expo-secure-store');
+  const isSecureStoreAvailable = await SecureStore.isAvailableAsync();
+
+  if (!isSecureStoreAvailable) {
+    await AsyncStorage.setItem(RITAM_SESSION_STORAGE_KEY, token);
+    return;
+  }
+
+  await SecureStore.setItemAsync(RITAM_SESSION_STORAGE_KEY, token);
 }
 
 export default function App() {
@@ -147,23 +217,19 @@ export default function App() {
   useEffect(() => {
     async function loadSavedData() {
       try {
-        const [storedName, storedPractices, storedSession ] = await Promise.all([
+        const [storedName, storedPractices, storedSessionToken ] = await Promise.all([
           AsyncStorage.getItem(USER_NAME_STORAGE_KEY),
           AsyncStorage.getItem(PRACTICES_STORAGE_KEY),
-          AsyncStorage.getItem(APP_SESSION_STORAGE_KEY),
+          getStoredRITAMSessionToken(),
         ]);
 
-        const sessionName = storedSession
-          ? getSessionDisplayName(JSON.parse(storedSession) as Partial<AppSession>)
-          : null;
-
-        setSavedName(storedName ?? sessionName);
+        setSavedName(storedName ?? (storedSessionToken ? 'RITAM student' : null));
 
         if (storedPractices) {
           setPractices(JSON.parse(storedPractices));
         }
       } catch (error) {
-        setErrorMessage('Could not load your saved data. Please try again.');
+        setErrorMessage('Could not load your mandala. Please try again.');
       } finally {
         setIsLoading(false);
       }
@@ -202,23 +268,16 @@ export default function App() {
       const idToken = await getGoogleIdentityToken();
       const session = await exchangeGoogleTokenWithRITAM(idToken);
 
-      await AsyncStorage.setItem(APP_SESSION_STORAGE_KEY, JSON.stringify(session));
-      setSavedName(session.user.name ?? session.user.email ?? 'RITAM student');
+      await saveRITAMSessionToken(session.accessToken);
+      setSavedName(getSessionDisplayName(session) ?? 'RITAM student');
       setGoogleSignInMessage('Signed in. Practice sync can now use your RITAM session.')
     } catch (error) {
       setGoogleSignInMessage(
         error instanceof Error ? error.message : 'Could not start Google sign-in. Please try again.',
-      );``
+      );
     } finally {
       setIsGoogleSigningIn(false);
     }
-  }
-
-  function startGoogleSignIn() {
-    setErrorMessage('');
-    setGoogleSignInMessage(
-      'Google sign in starts here. Next step: connect the native Google token exchange.',
-    );
   }
 
   async function createPractice() {
