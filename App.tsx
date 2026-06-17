@@ -31,10 +31,12 @@ const GOOGLE_WEB_CLIENT_ID = appConfig.expo.extra.googleWebClientId;
 type Practice = {
   id: string;
   name: string;
-  startedAt: string;
+  startedAt?: string;
   daysCompleted: number;
   durationDays: number;
   lastCompletedAt?: string;
+  showOwnerName?: boolean;
+  visibility?: string;
 };
 
 type AppSession = {
@@ -49,6 +51,26 @@ type AppSession = {
 type RITAMAuthResponse = {
   token?: string;
   user?: AppSession['user'];
+};
+
+type RITAMMandala = {
+  days_done?: number;
+  done_today?: boolean;
+  habit_title?: string;
+  id: string;
+  show_owner_name?: boolean;
+  visibility?: string;
+};
+
+type RITAMMandalasResponse = {
+  mandalas?: RITAMMandala[];
+  ok?: boolean;
+};
+
+type RITAMRequestOptions = {
+  body?: unknown;
+  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  token?: string;
 };
 
 function getSessionDisplayName(session: Partial<AppSession>) {
@@ -109,7 +131,7 @@ async function signInWithGoogleNative(): Promise<string> {
     throw new Error("Native Google sign-in needs googleWebClientId in app.json.");
   }
 
- const { GoogleSignin, isCancelledResponse, isSuccessResponse } = await import(
+  const { GoogleSignin, isCancelledResponse, isSuccessResponse } = await import(
   '@react-native-google-signin/google-signin'
  );
  GoogleSignin.configure({
@@ -140,20 +162,34 @@ async function signInWithGoogleNative(): Promise<string> {
  return idToken;
 }
 
-async function exchangeGoogleTokenWithRITAM(idToken: string): Promise<AppSession> {
-  const response = await fetch(`${RITAM_YOGA_API_BASE_URL}/api/auth/google`, {
-    body: JSON.stringify({ credential: idToken }),
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    method: 'POST',
-  });
 
-  if(!response.ok) {
-    throw new Error('Ritam sign-in failed. Please try again.');
+async function ritamRequest<T>(endpoint: string, options: RITAMRequestOptions = {}) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
   }
 
-  const data = (await response.json()) as RITAMAuthResponse;
+  if (options.token) {
+    headers.Authorization = `Bearer ${options.token}`;
+  }
+
+  const response = await fetch(`${RITAM_YOGA_API_BASE_URL}${endpoint}`, {
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    headers,
+    method: options.method ?? 'GET',
+  });
+
+  if (!response.ok) {
+    throw new Error(`RITAM request ailed: ${endpoint}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function exchangeGoogleTokenWithRITAM(idToken: string): Promise<AppSession> {
+  const data = await ritamRequest<RITAMAuthResponse>('/api/auth/google', {
+    body: { credential: idToken, consent: 'yes' },
+    method: 'POST',
+  });
 
   if (!data.token) {
     throw new Error('RITAM sign-in returned and unexpected response.');
@@ -197,6 +233,30 @@ async function saveRITAMSessionToken(token: string) {
   await SecureStore.setItemAsync(RITAM_SESSION_STORAGE_KEY, token);
 }
 
+function normalizeRITAMMandala(mandala: RITAMMandala): Practice {
+  return {
+    daysCompleted: mandala.days_done ?? 0,
+    durationDays: 48,
+    id: mandala.id,
+    lastCompletedAt: mandala.done_today ? getLocalDateKey() : undefined,
+    name: mandala.habit_title?.trim() || 'Untitled mandala',
+    showOwnerName: mandala.show_owner_name,
+    visibility: mandala.visibility,
+  };
+}
+
+async function fetchRITAMMandalas(sessionToken: string) {
+  const data = await ritamRequest<RITAMMandalasResponse>('/api/mandalas', {
+    token: sessionToken,
+  });
+
+  if (!data.ok || !Array.isArray(data.mandalas)) {
+    throw new Error('RITAM returned unexpected mandala list.');
+  }
+
+  return data.mandalas.map(normalizeRITAMMandala);
+}
+
 export default function App() {
   const [name, setName] = useState('');
   const [savedName, setSavedName] = useState<string | null>(null);
@@ -227,6 +287,12 @@ export default function App() {
 
         if (storedPractices) {
           setPractices(JSON.parse(storedPractices));
+        }
+
+        if (storedSessionToken) {
+          const syncedPractices = await fetchRITAMMandalas(storedSessionToken);
+          setPractices(syncedPractices);
+          await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(syncedPractices));
         }
       } catch (error) {
         setErrorMessage('Could not load your mandala. Please try again.');
@@ -269,6 +335,9 @@ export default function App() {
       const session = await exchangeGoogleTokenWithRITAM(idToken);
 
       await saveRITAMSessionToken(session.accessToken);
+      const syncedPractices = await fetchRITAMMandalas(session.accessToken);
+      setPractices(syncedPractices);
+      await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(syncedPractices));
       setSavedName(getSessionDisplayName(session) ?? 'RITAM student');
       setGoogleSignInMessage('Signed in. Practice sync can now use your RITAM session.')
     } catch (error) {
@@ -680,11 +749,13 @@ function PracticeCard({
     practice: Practice;
 }) {
     const progress = Math.round((practice.daysCompleted / practice.durationDays) * 100);
-    const startedAt = new Date(practice.startedAt).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+    const startedAt = practice.startedAt
+      ? new Date(practice.startedAt).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        })
+      : null;
     const isComplete = practice.daysCompleted >= practice.durationDays;
     const isCompletedToday = practice.lastCompletedAt === getLocalDateKey();
     const canCompleteToday = !isSaving && !isComplete && !isCompletedToday;
@@ -715,7 +786,8 @@ function PracticeCard({
           <View style={styles.practiceDetails}>
             <Text style={styles.practiceName}>{practice.name}</Text>
             <Text style={styles.practiceMeta}>
-              Started {startedAt} . {practice.daysCompleted} of {practice.durationDays} days complete
+              {startedAt ? `Started ${startedAt}` : 'Synced mandala'} {'\u00B7'} {practice.daysCompleted} of{' '}
+              {practice.durationDays} days complete
             </Text>
             <Text style={styles.practiceStatus}>{statusText}</Text>
 
