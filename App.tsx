@@ -233,6 +233,30 @@ async function saveRITAMSessionToken(token: string) {
   await SecureStore.setItemAsync(RITAM_SESSION_STORAGE_KEY, token);
 }
 
+async function clearRITAMSessionToken() {
+  await AsyncStorage.removeItem(RITAM_SESSION_STORAGE_KEY);
+
+  if (Platform.OS === 'web') {
+    return;
+  }
+
+  const SecureStore = await import('expo-secure-store');
+  const isSecureStoreAvailable = await SecureStore.isAvailableAsync();
+
+  if(isSecureStoreAvailable) {
+    await SecureStore.deleteItemAsync(RITAM_SESSION_STORAGE_KEY);
+  }
+}
+
+async function signOutFromGoogle() {
+  if (Platform.OS === 'web') {
+    return;
+  }
+
+  const { GoogleSignin } = await import('@react-native-google-signin/google-signin');
+  await GoogleSignin.signOut();
+}
+
 function normalizeRITAMMandala(mandala: RITAMMandala): Practice {
   return {
     daysCompleted: mandala.days_done ?? 0,
@@ -438,21 +462,31 @@ export default function App() {
     }
   }
 
-  // async function resetName() {
-  //   setIsSaving(true);
-  //   setErrorMessage('');
+  async function logout() {
+    setIsSaving(true);
+    setErrorMessage('');
 
-  //   try {
-  //     await AsyncStorage.removeItem(USER_NAME_STORAGE_KEY);
-  //     setName('');
-  //     setSavedName(null);
-  //   } catch (error) {
-  //     console.error('Error resetting name:', error);
-  //     setErrorMessage('Could not reset your name. Please try again.');
-  //   } finally {
-  //     setIsSaving(false);
-  //   }
-  // }
+    try {
+      await Promise.all([
+        clearRITAMSessionToken(),
+        AsyncStorage.removeItem(USER_NAME_STORAGE_KEY),
+        AsyncStorage.removeItem(PRACTICES_STORAGE_KEY),
+        signOutFromGoogle().catch(() => undefined),
+      ]);
+
+      setName('');
+      setSavedName(null);
+      setPracticeName('');
+      setPractices([]);
+      setIsCreatingPractice(false);
+      setPendingDeletePracticeId(null);
+      setGoogleSignInMessage('');
+    } catch {
+      setErrorMessage('Could not log out. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -483,6 +517,19 @@ export default function App() {
             <Text style={styles.subtitle}>
               Each practice is a seed. With daily discipline, it blooms over 48 days. 
             </Text>
+
+            <Pressable
+              accessibilityRole='button'
+              disabled={isSaving}
+              onPress={logout}
+              style={({ pressed }) => [
+                styles.logoutButton,
+                isSaving && styles.primaryButtonDisabled,
+                pressed && !isSaving && styles.pressed,
+              ]}
+            >
+              <Text style={styles.logoutButtonText}>Log out</Text>
+            </Pressable>            
           </View>
 
           <View style={styles.card}>
@@ -906,6 +953,24 @@ const styles = StyleSheet.create({
     lineHeight: 31,
     maxWidth: 440,
     textAlign: 'center',
+  },
+  logoutButton: {
+    alignItems: 'center',
+    borderColor: theme.rule,
+    borderRadius: 999,
+    borderWidth: 1,
+    justifyContent: 'center',
+    marginTop: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  logoutButtonText: {
+    color: theme.marigoldDeep,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    lineHeight: 18,
+    textTransform: 'uppercase'
   },
   card: {
     backgroundColor: theme.backgroundElement,
