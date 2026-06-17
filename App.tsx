@@ -294,6 +294,13 @@ async function createRITAMMandala(sessionToken: string, habitTitle: string) {
   });
 }
 
+async function endRITAMMandala(sessionToken: string, mandalaId: string) {
+  await ritamRequest<unknown>(`/api/mandalas/${encodeURIComponent(mandalaId)}/end`, {
+    method: 'POST',
+    token: sessionToken
+  })
+}
+
 export default function App() {
   const [name, setName] = useState('');
   const [savedName, setSavedName] = useState<string | null>(null);
@@ -473,12 +480,24 @@ export default function App() {
   }
  
   async function deletePractice(practiceId: string) {
-    const nextPractices = practices.filter((practice) => practice.id !== practiceId);
+    const practice = practices.find((item) => item.id === practiceId);
+
+    if(!practice) {
+      return;
+    }
 
     setIsSaving(true);
     setErrorMessage('');
     
     try {
+      const sessionToken = await getStoredRITAMSessionToken();
+
+      if (sessionToken){
+        await endRITAMMandala(sessionToken, practice.id);
+      }
+
+      const nextPractices = practices.filter((item) => item.id !== practiceId);
+      
       await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(nextPractices));
       setPractices(nextPractices);
       setPendingDeletePracticeId(null);
