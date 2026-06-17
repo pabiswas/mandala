@@ -182,7 +182,9 @@ async function ritamRequest<T>(endpoint: string, options: RITAMRequestOptions = 
     throw new Error(`RITAM request ailed: ${endpoint}`);
   }
 
-  return (await response.json()) as T;
+  const responseText = await response.text();
+
+  return (responseText ? JSON.parse(responseText) : undefined) as T;
 }
 
 async function exchangeGoogleTokenWithRITAM(idToken: string): Promise<AppSession> {
@@ -279,6 +281,17 @@ async function fetchRITAMMandalas(sessionToken: string) {
   }
 
   return data.mandalas.map(normalizeRITAMMandala);
+}
+
+async function createRITAMMandala(sessionToken: string, habitTitle: string) {
+  await ritamRequest<unknown>('/api/mandalas', {
+    body: {
+      habit_title: habitTitle,
+      today: getLocalDateKey(),
+    },
+    method: 'POST',
+    token: sessionToken
+  });
 }
 
 export default function App() {
@@ -380,23 +393,37 @@ export default function App() {
       return;
     }
 
-    const nextPractices: Practice[] = [
-      {
-        id: Date.now().toString(),
-        name: trimmedPracticeName,
-        startedAt: new Date().toISOString(),
-        daysCompleted: 0,
-        durationDays: 48,
-      },
-      ...practices,
-    ];
+    setIsSaving(true);
+    setErrorMessage('');
+
 
     setIsSaving(true);
     setErrorMessage('');
 
     try {
-      await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(nextPractices));
-      setPractices(nextPractices);
+      const sessionToken = await getStoredRITAMSessionToken();
+      
+      if (sessionToken) {
+        await createRITAMMandala(sessionToken, trimmedPracticeName);
+
+        const syncedPractices = await fetchRITAMMandalas(sessionToken);
+        await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(syncedPractices));
+        setPractices(syncedPractices);
+      } else {
+        const nextPractices: Practice[] = [
+          {
+            id: Date.now().toString(),
+            name: trimmedPracticeName,
+            startedAt: new Date().toISOString(),
+            daysCompleted: 0,
+            durationDays: 48,
+          },
+          ...practices,
+        ];
+
+        await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(nextPractices));
+        setPractices(nextPractices);
+      }
       setPracticeName('');
       setIsCreatingPractice(false);
     } catch (error) {
