@@ -294,6 +294,16 @@ async function createRITAMMandala(sessionToken: string, habitTitle: string) {
   });
 }
 
+async function checkInRITAMMandala(sessionToken: string, mandalaId: string) {
+  await ritamRequest<unknown>(`/api/mandalas/${encodeURIComponent(mandalaId)}/checkin`, {
+    body: {
+      day_local: getLocalDateKey(),
+    },
+    method: 'POST',
+    token: sessionToken,
+  });
+}
+
 async function endRITAMMandala(sessionToken: string, mandalaId: string) {
   await ritamRequest<unknown>(`/api/mandalas/${encodeURIComponent(mandalaId)}/end`, {
     method: 'POST',
@@ -452,22 +462,32 @@ export default function App() {
       return;
     }
 
-    const nextPractices = practices.map((item) => 
-      item.id === practiceId
-        ? {
-          ...item,
-          daysCompleted: Math.min(item.daysCompleted + 1, item.durationDays),
-          lastCompletedAt: today,
-          }
-         : item,
-    );
-
     setIsSaving(true);
     setErrorMessage('');
 
     try {
-       await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(nextPractices));
-       setPractices(nextPractices);
+      const sessionToken = await getStoredRITAMSessionToken();
+
+      if(sessionToken) {
+        await checkInRITAMMandala(sessionToken, practice.id);
+
+        const syncedPractices = await fetchRITAMMandalas(sessionToken);
+        await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(syncedPractices));
+        setPractices(syncedPractices);
+      } else {
+        const nextPractices = practices.map((item) => 
+          item.id === practiceId
+            ? {
+              ...item,
+              daysCompleted: Math.min(item.daysCompleted + 1, item.durationDays),
+              lastCompletedAt: today,
+            }
+            : item,
+          );
+
+        await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(nextPractices));
+        setPractices(nextPractices);
+      }
      } catch (error) {
        setErrorMessage('Could not update your practice. Please try again.');
      } finally {
@@ -497,7 +517,7 @@ export default function App() {
       }
 
       const nextPractices = practices.filter((item) => item.id !== practiceId);
-      
+
       await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(nextPractices));
       setPractices(nextPractices);
       setPendingDeletePracticeId(null);
