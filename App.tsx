@@ -53,6 +53,14 @@ type RITAMAuthResponse = {
   user?: AppSession['user'];
 };
 
+type RITAMAuthConfigResponse = {
+  dev_login_available?: boolean;
+  google_client_id?: string;
+  ok?: boolean;
+  policy_url?: string;
+  policy_version?: string;
+};
+
 type RITAMMandala = {
   days_done?: number;
   done_today?: boolean;
@@ -189,7 +197,7 @@ async function ritamRequest<T>(endpoint: string, options: RITAMRequestOptions = 
 
 async function exchangeGoogleTokenWithRITAM(idToken: string): Promise<AppSession> {
   const data = await ritamRequest<RITAMAuthResponse>('/api/auth/google', {
-    body: { credential: idToken, consent: 'yes' },
+    body: { credential: idToken, consent: true },
     method: 'POST',
   });
 
@@ -201,6 +209,16 @@ async function exchangeGoogleTokenWithRITAM(idToken: string): Promise<AppSession
     accessToken: data.token,
     user: data.user,
   }
+}
+
+async function fetchRITAMAuthConfig() {
+  const data = await ritamRequest<RITAMAuthConfigResponse>('/api/auth/config');
+
+  if (!data.ok || !data.policy_url) {
+    throw new Error('RITAM returned an unexpected auth config.');
+  }
+
+  return data;
 }
 
 async function getStoredRITAMSessionToken() {
@@ -316,16 +334,21 @@ export default function App() {
   const [savedName, setSavedName] = useState<string | null>(null);
   const [practiceName, setPracticeName] = useState('');
   const [practices, setPractices] = useState<Practice[]>([]);
+  const [authConfig, setAuthConfig] = useState<RITAMAuthConfigResponse | null>(null);
+  const [hasAcceptedPolicy, setHasAcceptedPolicy] = useState(false);
+  // const [hasAcceptedPolicy, setHasAcceptedPolicy] = useState(__DEV__);
   const [isCreatingPractice, setIsCreatingPractice] = useState(false);
   const [pendingDeletePracticeId, setPendingDeletePracticeId] = useState<string | null>(null);
   const [googleSignInMessage, setGoogleSignInMessage] = useState('');
   const [isGoogleSigningIn, setIsGoogleSigningIn] = useState(false);
+  const [isLoadingAuthConfig, setIsLoadingAuthConfig] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
   const canContinue = name.trim().length > 0;
   const canCreatePractice = practiceName.trim().length > 0;
+  const canSignInWithGoogle = hasAcceptedPolicy && (__DEV__ || Boolean(authConfig?.policy_url)) && !isLoadingAuthConfig;
   const pendingDeletePractice = practices.find((practice) => practice.id === pendingDeletePracticeId);
   
   useEffect(() => {
@@ -358,6 +381,21 @@ export default function App() {
     loadSavedData();
   }, []);
 
+  useEffect(() => {
+    async function loadAuthConfig() {
+      try {
+        const config = await fetchRITAMAuthConfig();
+        setAuthConfig(config);
+      } catch {
+        setGoogleSignInMessage('Could not load RITAM fine print. Please try again.');
+      } finally {
+        setIsLoadingAuthConfig(false);
+      }
+    }
+
+    loadAuthConfig();
+  }, []);
+
   async function saveName() {
     const trimmedName = name.trim();
 
@@ -380,6 +418,11 @@ export default function App() {
   }
 
   async function signInWithGoogle() {
+    if(!canSignInWithGoogle) {
+      setGoogleSignInMessage('Please read and agree to the fine print before continuing.');
+      return;
+    }
+
     setErrorMessage('');
     setIsGoogleSigningIn(true);
     setGoogleSignInMessage('Starting Google sign-in...');
@@ -400,6 +443,19 @@ export default function App() {
       );
     } finally {
       setIsGoogleSigningIn(false);
+    }
+  }
+
+  async function openFinePrint() {
+    if (!authConfig?.policy_url) {
+      setGoogleSignInMessage('Fine print is not available yet. Please try again.');
+      return;
+    }
+
+    try {
+      await WebBrowser.openBrowserAsync(authConfig.policy_url);
+    } catch {
+      setGoogleSignInMessage('Could not open the fine print. Please try again.');
     }
   }
 
@@ -546,6 +602,7 @@ export default function App() {
       setPractices([]);
       setIsCreatingPractice(false);
       setPendingDeletePracticeId(null);
+      setHasAcceptedPolicy(false);
       setGoogleSignInMessage('');
     } catch {
       setErrorMessage('Could not log out. Please try again.');
@@ -783,14 +840,51 @@ export default function App() {
           </View>
 
           <Pressable
+            accessibilityRole='checkbox'
+            accessibilityState={{ checked: hasAcceptedPolicy, disabled: isLoadingAuthConfig }}
+            disabled={isLoadingAuthConfig}
+            onPress={() => setHasAcceptedPolicy((accepted) => !accepted)}
+            style={({ pressed }) => [
+              styles.consentRow,
+              isLoadingAuthConfig && styles.consentRowDisabled,
+              pressed && !isLoadingAuthConfig && styles.pressed,
+            ]}
+          >
+            <View style={[styles.checkbox, hasAcceptedPolicy && styles.checkboxChecked]}>
+              {hasAcceptedPolicy ? <Text style={styles.checkboxMark}>{'\u2713'}</Text> : null}
+            </View>
+
+            <Text style={styles.consentLink}>
+              {isLoadingAuthConfig ? 'Loading fine print...' : 'I have read and agreed to the '}
+              {!isLoadingAuthConfig ? (
+                <Text
+                  accessibilityRole='link'
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    void openFinePrint();
+                  }}
+                  style={styles.consentLink}
+                >
+                  fine print
+                </Text>
+              ) : null}
+              {!isLoadingAuthConfig ? '.' : null}
+            </Text>
+          </Pressable>
+
+          {authConfig?.policy_version ? (
+            <Text style={styles.policyVersionText}>Fine print version {authConfig.policy_version}</Text>
+          ) : null}
+
+          <Pressable
             accessibilityHint='Start Google sign-in for syncing your practices'
             accessibilityRole='button'
-            disabled={isGoogleSigningIn}
+            disabled={isGoogleSigningIn || !canSignInWithGoogle}
             onPress={signInWithGoogle}
             style={({ pressed }) => [
               styles.googleButton,
-              isGoogleSigningIn && styles.primaryButtonDisabled,
-              pressed && !isGoogleSigningIn && styles.pressed
+              (isGoogleSigningIn || !canSignInWithGoogle) && styles.primaryButtonDisabled,
+              pressed && !isGoogleSigningIn && canSignInWithGoogle && styles.pressed
             ]}
           >
             <Text style={styles.googleGlyph}>G</Text>
@@ -1100,6 +1194,59 @@ const styles = StyleSheet.create({
     fontSize: 16,
     minHeight: 52,
     paddingHorizontal: 16,
+  },
+  consentRow: {
+    alignItems: 'flex-start',
+    backgroundColor: theme.background,
+    borderColor: theme.rule,
+    borderRadius: 6,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  consentRowDisabled: {
+    opacity: 0.6,
+  },
+  checkbox: {
+    alignItems: 'center',
+    borderColor: theme.rule,
+    borderRadius: 4,
+    borderWidth: 1,
+    height: 22,
+    justifyContent: 'center',
+    marginTop: 1,
+    width: 22,
+  },
+  checkboxChecked: {
+    backgroundColor: theme.peacock,
+    borderColor: theme.peacock,
+  },
+  checkboxMark: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+    lineHeight: 20,
+  },
+  consentText: {
+    color: theme.text,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 20,
+  },
+  consentLink: {
+    color: theme.peacock,
+    fontWeight: '800',
+    textDecorationLine: 'underline'
+  },
+  policyVersionText: {
+    color: theme.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 16,
+    marginTop: -8,
   },
   googleButton: {
     alignItems: 'center',
