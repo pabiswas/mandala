@@ -1033,14 +1033,24 @@ function MandalaBloom({
   durationDays: number;
   isCompletedToday: boolean;
 }) {
+  const bloomSize = 132;
+  const bloomCenter = bloomSize / 2;
+  const petalWidth = 8;
+  const petalHeight = 22;
+  const petalRadius = 52;
+
   return (
     <View
       accessibilityLabel={`${completedDays} of ${durationDays} mandala flowers bloomed`}
       accessibilityRole='image'
       style={styles.bloomWrap}
     >
-      <View style={styles.bloomGrid}>
+      <View style={styles.bloomFlower}>
         {Array.from({ length: durationDays }, (_, index) => {
+          const angleDegrees = (index * 360) / durationDays;
+          const angleRadians = ((angleDegrees - 90) * Math.PI) / 180;
+          const petalCenterX = bloomCenter + Math.cos(angleRadians) * petalRadius;
+          const petalCenterY = bloomCenter + Math.sin(angleRadians) * petalRadius;
           const isBloomed = index < completedDays;
           const isToday = isCompletedToday && index === completedDays - 1;
 
@@ -1049,6 +1059,11 @@ function MandalaBloom({
               key={index}
               style={[
                 styles.bloomPetal,
+                {
+                  left: petalCenterX - petalWidth / 2,
+                  top: petalCenterY - petalHeight / 2,
+                  transform: [{ rotate: `${angleDegrees}deg` }]
+                },
                 isBloomed && styles.bloomPetalActive,
                 isToday && styles.bloomPetalToday,
               ]}
@@ -1056,10 +1071,15 @@ function MandalaBloom({
           );
         })}
 
+        <View style={styles.bloomCenter}>
+          <Text style={styles.bloomCenterText}>{'\u273B'}</Text>
+        </View>
+
       </View>
-
-      <Text>
-
+      <Text style={styles.bloomCaption}>
+        {completedDays === 0
+          ? 'Waiting for the first bloom'
+          : `${completedDays} ${completedDays === 1 ? 'flower' : 'flowers'} bloomed`}
       </Text>
     </View>
   )
@@ -1530,24 +1550,22 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   bloomWrap: {
+    alignItems: 'flex-start',
     gap: 6,
   },
-  bloomGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    maxWidth: 148,
+  bloomFlower: {
+    height: 132,
+    position: 'relative',
+    width: 132,
   },
   bloomPetal: {
     backgroundColor: theme.backgroundElement,
     borderColor: theme.rule,
-    borderTopLeftRadius: 9,
-    borderTopRightRadius: 9,
-    borderBottomLeftRadius: 9,
-    borderBottomRightRadius: 3,
+    borderRadius: 999,
     borderWidth: 1,
-    height: 13,
-    width: 13,
+    height: 22,
+    position: 'absolute',
+    width: 8,
   },
   bloomPetalActive: {
     backgroundColor: theme.marigold,
@@ -1556,6 +1574,24 @@ const styles = StyleSheet.create({
   bloomPetalToday: {
     backgroundColor: theme.peacock,
     borderColor: theme.peacock,
+  },
+  bloomCenter: {
+    alignItems: 'center',
+    backgroundColor: theme.backgroundSelected,
+    borderColor: theme.rule,
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 46,
+    justifyContent: 'center',
+    left: 43,
+    position: 'absolute',
+    top: 43,
+    width: 46,
+  },
+  bloomCenterText: {
+    color: theme.marigoldDeep,
+    fontSize: 22,
+    lineHeight: 26,
   },
   bloomCaption: {
     color: theme.textSecondary,
