@@ -955,6 +955,7 @@ function PracticeCard({
     onDelete: (practiceId: string) => void;
     practice: Practice;
 }) {
+    const completedDays = Math.min(Math.max(practice.daysCompleted, 0), practice.durationDays);
     const progress = Math.round((practice.daysCompleted / practice.durationDays) * 100);
     const startedAt = practice.startedAt
       ? new Date(practice.startedAt).toLocaleDateString(undefined, {
@@ -998,9 +999,11 @@ function PracticeCard({
             </Text>
             <Text style={styles.practiceStatus}>{statusText}</Text>
 
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: `${Math.max(progress, 4)}%` }]} />
-          </View>
+            <MandalaBloom 
+              completedDays={completedDays}
+              durationDays={practice.durationDays}
+              isCompletedToday={isCompletedToday}
+            />
         </View>
       </Pressable>
 
@@ -1019,6 +1022,47 @@ function PracticeCard({
       </Pressable>
     </View>
   );
+}
+
+function MandalaBloom({
+  completedDays,
+  durationDays,
+  isCompletedToday,
+}: {
+  completedDays: number;
+  durationDays: number;
+  isCompletedToday: boolean;
+}) {
+  return (
+    <View
+      accessibilityLabel={`${completedDays} of ${durationDays} mandala flowers bloomed`}
+      accessibilityRole='image'
+      style={styles.bloomWrap}
+    >
+      <View style={styles.bloomGrid}>
+        {Array.from({ length: durationDays }, (_, index) => {
+          const isBloomed = index < completedDays;
+          const isToday = isCompletedToday && index === completedDays - 1;
+
+          return (
+            <View 
+              key={index}
+              style={[
+                styles.bloomPetal,
+                isBloomed && styles.bloomPetalActive,
+                isToday && styles.bloomPetalToday,
+              ]}
+            />
+          );
+        })}
+
+      </View>
+
+      <Text>
+
+      </Text>
+    </View>
+  )
 }
 
 const theme = {
@@ -1485,16 +1529,39 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     textTransform: 'uppercase',
   },
-  progressTrack: {
-    backgroundColor: theme.backgroundSelected,
-    borderRadius: 999,
-    height: 8,
-    overflow: 'hidden',
+  bloomWrap: {
+    gap: 6,
   },
-  progressFill: {
+  bloomGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    maxWidth: 148,
+  },
+  bloomPetal: {
+    backgroundColor: theme.backgroundElement,
+    borderColor: theme.rule,
+    borderTopLeftRadius: 9,
+    borderTopRightRadius: 9,
+    borderBottomLeftRadius: 9,
+    borderBottomRightRadius: 3,
+    borderWidth: 1,
+    height: 13,
+    width: 13,
+  },
+  bloomPetalActive: {
+    backgroundColor: theme.marigold,
+    borderColor: theme.marigoldDeep,
+  },
+  bloomPetalToday: {
     backgroundColor: theme.peacock,
-    borderRadius: 999,
-    height: '100%',
+    borderColor: theme.peacock,
+  },
+  bloomCaption: {
+    color: theme.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
   },
   deleteButton: {
     alignItems: 'center',
