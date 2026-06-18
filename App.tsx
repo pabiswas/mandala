@@ -987,9 +987,11 @@ function PracticeCard({
             pressed && styles.pressed,
           ]}
         >
-          <View style={styles.flowerMark}>
-            <Text style={styles.flowerText}>✻</Text>
-          </View>
+          <MandalaBloom 
+            completedDays={completedDays}
+            durationDays={practice.durationDays}
+            isCompletedToday={isCompletedToday}
+          />
 
           <View style={styles.practiceDetails}>
             <Text style={styles.practiceName}>{practice.name}</Text>
@@ -998,12 +1000,6 @@ function PracticeCard({
               {practice.durationDays} days complete
             </Text>
             <Text style={styles.practiceStatus}>{statusText}</Text>
-
-            <MandalaBloom 
-              completedDays={completedDays}
-              durationDays={practice.durationDays}
-              isCompletedToday={isCompletedToday}
-            />
         </View>
       </Pressable>
 
@@ -1033,19 +1029,20 @@ function MandalaBloom({
   durationDays: number;
   isCompletedToday: boolean;
 }) {
-  const bloomSize = 132;
+  const bloomSize = 96;
   const bloomCenter = bloomSize / 2;
-  const petalWidth = 8;
-  const petalHeight = 22;
-  const petalRadius = 52;
+  const centerSize = 32;
+  const petalWidth = 6;
+  const petalHeight = 17;
+  const petalRadius = 38;
 
   return (
     <View
-      accessibilityLabel={`${completedDays} of ${durationDays} mandala flowers bloomed`}
+      accessibilityLabel={`${completedDays} of ${durationDays} mandala petals bloomed`}
       accessibilityRole='image'
       style={styles.bloomWrap}
     >
-      <View style={styles.bloomFlower}>
+      <View style={[styles.bloomFlower, { height: bloomSize, width: bloomSize }]}>
         {Array.from({ length: durationDays }, (_, index) => {
           const angleDegrees = (index * 360) / durationDays;
           const angleRadians = ((angleDegrees - 90) * Math.PI) / 180;
@@ -1071,16 +1068,19 @@ function MandalaBloom({
           );
         })}
 
-        <View style={styles.bloomCenter}>
+        <View style={[
+            styles.bloomCenter,
+            {
+              height: centerSize,
+              left: bloomCenter - centerSize / 2,
+              top: bloomCenter - centerSize / 2,
+              width: centerSize,
+            },
+            ]}>
           <Text style={styles.bloomCenterText}>{'\u273B'}</Text>
         </View>
 
       </View>
-      <Text style={styles.bloomCaption}>
-        {completedDays === 0
-          ? 'Waiting for the first bloom'
-          : `${completedDays} ${completedDays === 1 ? 'flower' : 'flowers'} bloomed`}
-      </Text>
     </View>
   )
 }
@@ -1581,17 +1581,13 @@ const styles = StyleSheet.create({
     borderColor: theme.rule,
     borderRadius: 999,
     borderWidth: 1,
-    height: 46,
     justifyContent: 'center',
-    left: 43,
     position: 'absolute',
-    top: 43,
-    width: 46,
   },
   bloomCenterText: {
     color: theme.marigoldDeep,
-    fontSize: 22,
-    lineHeight: 26,
+    fontSize: 18,
+    lineHeight: 22,
   },
   bloomCaption: {
     color: theme.textSecondary,
