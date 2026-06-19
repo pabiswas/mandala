@@ -39,6 +39,8 @@ type Practice = {
   visibility?: string;
 };
 
+type PracticeLayout = 'list' | 'stack';
+
 type AppSession = {
   accessToken: string;
   user?: {
@@ -334,6 +336,7 @@ export default function App() {
   const [savedName, setSavedName] = useState<string | null>(null);
   const [practiceName, setPracticeName] = useState('');
   const [practices, setPractices] = useState<Practice[]>([]);
+  const [practiceLayout, setPracticeLayout] = useState<PracticeLayout>('list');
   const [authConfig, setAuthConfig] = useState<RITAMAuthConfigResponse | null>(null);
   const [hasAcceptedPolicy, setHasAcceptedPolicy] = useState(false);
   // const [hasAcceptedPolicy, setHasAcceptedPolicy] = useState(__DEV__);
@@ -730,15 +733,64 @@ export default function App() {
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Existing practices</Text>
-            <Text style={styles.sectionSubtitle}>
-              Your mandalas will appear here as flowers in your garden.
-            </Text>
+            <View style={styles.sectionHeaderRow}>
+              <View style={styles.sectionHeaderText}>
+                <Text style={styles.sectionTitle}>Existing practices</Text>
+                <Text style={styles.sectionSubtitle}>
+                  Your mandalas will appear here as flowers in your garden.
+                </Text>
+            </View>
 
+            <View style={styles.layoutToggle}>
+              <Pressable
+                accessibilityRole='button'
+                accessibilityState={{ selected: practiceLayout === 'list' }}
+                onPress={() => setPracticeLayout('list')}
+                style={({ pressed }) => [
+                  styles.layoutToggleButton,
+                  practiceLayout === 'list' && styles.layoutToggleButtonActive,
+                  pressed && styles.pressed
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.layoutToggleText,
+                    practiceLayout === 'list' && styles.layoutToggleTextActive,
+                  ]}
+                >
+                  List
+                </Text>
+              </Pressable>
+
+              <Pressable>
+                <Text
+                  style={[
+                    styles.layoutToggleText,
+                    practiceLayout === 'stack' && styles.layoutToggleTextActive,
+                  ]}
+                >
+                  Stack todo
+                </Text>
+              </Pressable>
+              </View>
+            </View>
             {practices.length === 0 ? (
               <View style={styles.emptyGarden}>
                 <Text style={styles.emptyGardenFlower}>🌱</Text>
                 <Text style={styles.helperText}>Your garden is empty. Start a practice to see it bloom here.</Text>
+              </View>
+            ) : practiceLayout === 'stack' ? (
+              <View style={styles.stackedPracticeList}>
+                {practices.map((practice, index) => (
+                  <StackedPracticeCard 
+                    key={practice.id}
+                    index={index}
+                    isSaving={isSaving}
+                    onCompleteToday={completePracticeToday}
+                    onDelete={confirmDeletePractice}
+                    practice={practice}
+                  />
+                ))}
               </View>
             ) : (
               <View style={styles.practiceList}>
@@ -945,17 +997,7 @@ export default function App() {
   );
 }
 
-function PracticeCard({
-    isSaving,
-    onCompleteToday,
-    onDelete,
-    practice,
-}: {
-    isSaving: boolean;
-    onCompleteToday: (practiceId: string) => void;
-    onDelete: (practiceId: string) => void;
-    practice: Practice;
-}) {
+function getPracticeDisplayState(practice: Practice, isSaving: boolean) {
     const completedDays = Math.min(Math.max(practice.daysCompleted, 0), practice.durationDays);
     const progress = Math.round((practice.daysCompleted / practice.durationDays) * 100);
     const startedAt = practice.startedAt
@@ -973,9 +1015,26 @@ function PracticeCard({
       : isCompletedToday
         ? 'Completed today'
         : 'Tap to mark today complete';
+    
+    return { canCompleteToday, completedDays, isCompletedToday, startedAt, statusText };
+ }
 
-    return (
-      <View style={styles.practiceCard}>
+function PracticeCard({
+  isSaving,
+  onCompleteToday,
+  onDelete,
+  practice,
+}: {
+  isSaving: boolean;
+  onCompleteToday: (practiceId: string) => void;
+  onDelete: (practiceId: string) => void;
+  practice: Practice;
+}) {
+  const { canCompleteToday, completedDays, isCompletedToday, startedAt, statusText } =
+    getPracticeDisplayState(practice, isSaving);
+  
+  return (
+    <View style={styles.practiceCard}>
         <Pressable
           accessibilityHint={statusText}
           accessibilityRole="button"
@@ -1021,21 +1080,96 @@ function PracticeCard({
   );
 }
 
+function StackedPracticeCard({
+  index,
+  isSaving,
+  onCompleteToday,
+  onDelete,
+  practice,
+}: {
+  index: number;
+  isSaving: boolean;
+  onCompleteToday: (practiceId: string) => void;
+  onDelete: (practiceId: string) => void;
+  practice: Practice;
+}) {
+  const { canCompleteToday, completedDays, isCompletedToday, startedAt, statusText } =
+    getPracticeDisplayState(practice, isSaving);
+  
+  return (
+    <View style={[styles.stackedPracticeCard, index > 0 && styles.stackedPracticeCardOverlap]}>
+      <View style={styles.stackedPracticeBloomFrame}>
+        <MandalaBloom 
+          completedDays={completedDays}
+          durationDays={practice.durationDays}
+          isCompletedToday={isCompletedToday}
+          size={160}
+        />
+      </View>
+
+      <Text style={styles.stackedPracticeName}>{practice.name}</Text>
+      <Text style={styles.stackedPracticeMeta}>
+        {startedAt ? `Started ${startedAt}` : 'Synced mandala'} . {practice.daysCompleted} of{' '}
+        {practice.durationDays} days complete
+      </Text>
+      <Text style={styles.practiceStatus}>{statusText}</Text>
+
+      <View style={styles.stackedActionRow}>
+        <Pressable
+          accessibilityHint={statusText}
+          accessibilityRole='button'
+          accessibilityState={{disabled: !canCompleteToday}}
+          disabled={!canCompleteToday}
+          onPress={() => onCompleteToday(practice.id)}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            styles.stackedActionButton,
+            !canCompleteToday && styles.primaryButtonDisabled,
+            pressed && canCompleteToday && styles.pressed,
+          ]}
+        >
+          <Text style={styles.primaryButtonText}>
+            {isCompletedToday ? 'Bloomed today' : 'Mark today complete'}
+          </Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityHint={`Delete ${practice.name}`}
+          accessibilityRole='button'
+          disabled={isSaving}
+          onPress={() => onDelete(practice.id)}
+          style={({ pressed }) => [
+            styles.secondaryButton,
+            styles.stackedDeleteButton,
+            isSaving && styles.deleteButtonDisabled,
+            pressed && !isSaving && styles.pressed,
+          ]}
+        >
+          <Text style={styles.secondaryButtonText}>Delete</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 function MandalaBloom({
   completedDays,
   durationDays,
   isCompletedToday,
+  size = 96,
 }: {
   completedDays: number;
   durationDays: number;
   isCompletedToday: boolean;
+  size?: number;
 }) {
-  const bloomSize = 96;
+  const bloomSize = size;
   const bloomCenter = bloomSize / 2;
-  const centerSize = 32;
-  const petalWidth = 6;
-  const petalHeight = 17;
-  const petalRadius = 38;
+  const centerSize = bloomSize * 0.33;
+  const petalWidth = bloomSize * 0.0625;
+  const petalHeight = bloomSize * 0.177;
+  const petalRadius = bloomSize * 0.396;
+  const centerTextSize = bloomSize * 0.1875;
 
   return (
     <View
@@ -1058,9 +1192,11 @@ function MandalaBloom({
               style={[
                 styles.bloomPetal,
                 {
+                  height: petalHeight,
                   left: petalCenterX - petalWidth / 2,
                   top: petalCenterY - petalHeight / 2,
-                  transform: [{ rotate: `${angleDegrees}deg` }]
+                  transform: [{ rotate: `${angleDegrees}deg` }],
+                  width: petalWidth,
                 },
                 isBloomed && styles.bloomPetalActive,
                 isToday && styles.bloomPetalToday,
@@ -1078,7 +1214,7 @@ function MandalaBloom({
               width: centerSize,
             },
             ]}>
-          <Text style={styles.bloomCenterText}>{'\u273B'}</Text>
+          <Text style={[styles.bloomCenterText, { fontSize: centerTextSize, lineHeight: centerTextSize + 4 }]}>{'\u273B'}</Text>
         </View>
 
       </View>
@@ -1462,6 +1598,45 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     lineHeight: 22,
   },
+  sectionHeaderRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+  sectionHeaderText: {
+    flex: 1,
+    gap: 4,
+    minWidth: 220,
+  },
+  layoutToggle: {
+    backgroundColor: theme.background,
+    borderColor: theme.rule,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    padding: 3,
+  },
+  layoutToggleButton: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  layoutToggleButtonActive: {
+    backgroundColor: theme.peacock,
+  },
+  layoutToggleText: {
+    color: theme.textSecondary,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+    lineHeight: 16,
+    textTransform: 'uppercase',
+  },
+  layoutToggleTextActive: {
+    color: '#FFFFFF',
+  },
   sectionTitle: {
     color: theme.text,
     fontFamily: Platform.select({ ios: 'ui-serif', default: 'serif' }),
@@ -1491,6 +1666,65 @@ const styles = StyleSheet.create({
   },
   practiceList: {
     gap: 12,
+  },
+  stackedPracticeList: {
+    paddingTop: 2,
+  },
+  stackedPracticeCard: {
+    alignItems: 'center',
+    backgroundColor: theme.background,
+    borderColor: theme.rule,
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    shadowColor: '#4A2F15',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+  },
+  stackedPracticeCardOverlap: {
+    marginTop: -6,
+  },
+  stackedPracticeBloomFrame: {
+    alignItems: 'center',
+    backgroundColor: theme.backgroundElement,
+    borderColor: theme.rule,
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 184,
+    justifyContent: 'center',
+    width: 184,
+  },
+  stackedPracticeName: {
+    color: theme.text,
+    fontFamily: Platform.select({ ios: 'ui-serif', default: 'serif' }),
+    fontSize: 27,
+    fontWeight: '600',
+    lineHeight: 34,
+    textAlign: 'center',
+  },
+  stackedPracticeMeta: {
+    color: theme.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 20,
+    textAlign: 'center',
+  },
+  stackedActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+    width: '100%',
+  },
+  stackedActionButton: {
+    flex: 1,
+    marginTop: 0,
+  },
+  stackedDeleteButton: {
+    minHeight: 52,
+    paddingHorizontal: 16,
   },
   practiceCard: {
     alignItems: 'center',
@@ -1564,9 +1798,7 @@ const styles = StyleSheet.create({
     borderColor: theme.rule,
     borderRadius: 999,
     borderWidth: 1,
-    height: 22,
     position: 'absolute',
-    width: 8,
   },
   bloomPetalActive: {
     backgroundColor: theme.marigold,
@@ -1587,8 +1819,6 @@ const styles = StyleSheet.create({
   },
   bloomCenterText: {
     color: theme.marigoldDeep,
-    fontSize: 18,
-    lineHeight: 22,
   },
   bloomCaption: {
     color: theme.textSecondary,
