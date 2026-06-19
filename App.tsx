@@ -71,7 +71,7 @@ type RITAMMandala = {
 };
 
 type RITAMMandalasResponse = {
-  mandalas?: RITAMMandala[];
+  active?: RITAMMandala[];
   ok?: boolean;
 };
 
@@ -294,11 +294,11 @@ async function fetchRITAMMandalas(sessionToken: string) {
     token: sessionToken,
   });
 
-  if (!data.ok || !Array.isArray(data.mandalas)) {
+  if (!data.ok || !Array.isArray(data.active)) {
     throw new Error('RITAM returned unexpected mandala list.');
   }
 
-  return data.mandalas.map(normalizeRITAMMandala);
+  return data.active.map(normalizeRITAMMandala);
 }
 
 async function createRITAMMandala(sessionToken: string, habitTitle: string) {
@@ -348,7 +348,8 @@ export default function App() {
 
   const canContinue = name.trim().length > 0;
   const canCreatePractice = practiceName.trim().length > 0;
-  const canSignInWithGoogle = hasAcceptedPolicy && (__DEV__ || Boolean(authConfig?.policy_url)) && !isLoadingAuthConfig;
+  // const canSignInWithGoogle = hasAcceptedPolicy && (__DEV__ || Boolean(authConfig?.policy_url)) && !isLoadingAuthConfig;
+  const canSignInWithGoogle = true;
   const pendingDeletePractice = practices.find((practice) => practice.id === pendingDeletePracticeId);
   
   useEffect(() => {
@@ -381,20 +382,20 @@ export default function App() {
     loadSavedData();
   }, []);
 
-  useEffect(() => {
-    async function loadAuthConfig() {
-      try {
-        const config = await fetchRITAMAuthConfig();
-        setAuthConfig(config);
-      } catch {
-        setGoogleSignInMessage('Could not load RITAM fine print. Please try again.');
-      } finally {
-        setIsLoadingAuthConfig(false);
-      }
-    }
+  // useEffect(() => {
+  //   async function loadAuthConfig() {
+  //     try {
+  //       const config = await fetchRITAMAuthConfig();
+  //       setAuthConfig(config);
+  //     } catch {
+  //       setGoogleSignInMessage('Could not load RITAM fine print. Please try again.');
+  //     } finally {
+  //       setIsLoadingAuthConfig(false);
+  //     }
+  //   }
 
-    loadAuthConfig();
-  }, []);
+  //   loadAuthConfig();
+  // }, []);
 
   async function saveName() {
     const trimmedName = name.trim();
@@ -839,7 +840,7 @@ export default function App() {
             <Text style={styles.mandalaBadgeText}>Day 1 of 48</Text>
           </View>
 
-          <Pressable
+          {/* <Pressable
             accessibilityRole='checkbox'
             accessibilityState={{ checked: hasAcceptedPolicy, disabled: isLoadingAuthConfig }}
             disabled={isLoadingAuthConfig}
@@ -870,7 +871,7 @@ export default function App() {
               ) : null}
               {!isLoadingAuthConfig ? '.' : null}
             </Text>
-          </Pressable>
+          </Pressable> */}
 
           {authConfig?.policy_version ? (
             <Text style={styles.policyVersionText}>Fine print version {authConfig.policy_version}</Text>
