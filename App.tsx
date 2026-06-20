@@ -17,6 +17,7 @@ import {
   View,
  } from 'react-native';
  import appConfig from './app.json';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
  WebBrowser.maybeCompleteAuthSession();
 
@@ -53,6 +54,17 @@ type AppSession = {
   };
 };
 
+type GoogleIdentity = {
+  displayName?: string | null;
+  idToken: string;
+};
+
+type GoogleIdentityTokenClaims = {
+  email?: string;
+  given_name?: string;
+  name?: string;
+};
+
 type RITAMAuthResponse = {
   token?: string;
   user?: AppSession['user'];
@@ -87,7 +99,34 @@ type RITAMRequestOptions = {
 };
 
 function getSessionDisplayName(session: Partial<AppSession>) {
-  return session.user?.name ?? session.user?.email ?? null;
+  return session.user?.name?.trim() || session.user?.email?.trim() || null;
+}
+
+function getGoogleDisplayNameFromClaims(claims: GoogleIdentityTokenClaims | null) {
+  return claims?.name?.trim() || claims?.given_name?.trim() || claims?.email?.trim() || null;
+}
+
+function getGoogleIdentityTokenClaims(idToken: string): GoogleIdentityTokenClaims | null {
+  const payload = idToken.split('.')[1];
+
+  if (!payload || typeof globalThis.atob !== 'function') {
+    return null;
+  }
+
+  try {
+    const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const paddedBase64 = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    const binaryPayload = globalThis.atob(paddedBase64);
+    const jsonPayload = decodeURIComponent(
+      Array.from(binaryPayload)
+      .map((character) => `%${character.charCodeAt(0).toString(16).padStart(2, '0')}`)
+      .join(''),
+    );
+
+    return JSON.parse(jsonPayload) as GoogleIdentityTokenClaims;
+  } catch {
+    return null;
+  }
 }
 
 function getLocalDateKey(date = new Date()) {
@@ -100,7 +139,7 @@ function getLocalDateKey(date = new Date()) {
 function createNonce() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 }
-async function getGoogleIdentityToken(): Promise<string> {
+async function getGoogleIdentityToken(): Promise<GoogleIdentity> {
   if (Platform.OS === 'web') {
     return signInWithGoogleBrowser();
   }
@@ -108,7 +147,7 @@ async function getGoogleIdentityToken(): Promise<string> {
   return signInWithGoogleNative();
 }
 
-async function signInWithGoogleBrowser(): Promise<string> {
+async function signInWithGoogleBrowser(): Promise<GoogleIdentity> {
   if (!GOOGLE_WEB_CLIENT_ID) {
     throw new Error('Browser Google sign-in needs expo-auth-session and a Google web client ID.');
   }
@@ -136,10 +175,13 @@ async function signInWithGoogleBrowser(): Promise<string> {
     throw new Error('Google sign-in did not return an ID token.');
   }
 
-  return idToken;
+  return {
+    displayName: getGoogleDisplayNameFromClaims(getGoogleIdentityTokenClaims(idToken)),
+    idToken,
+  };
 }
 
-async function signInWithGoogleNative(): Promise<string> {
+async function signInWithGoogleNative(): Promise<GoogleIdentity> {
   if (!GOOGLE_WEB_CLIENT_ID) {
     throw new Error("Native Google sign-in needs googleWebClientId in app.json.");
   }
@@ -172,7 +214,12 @@ async function signInWithGoogleNative(): Promise<string> {
   throw new Error('Google sign-in did not return an ID token.');
  }
 
- return idToken;
+  console.log(response)
+  return {
+    displayName: 
+      response.data.user.name?.trim() || getGoogleDisplayNameFromClaims(getGoogleIdentityTokenClaims(idToken)),
+    idToken,
+  };
 }
 
 
@@ -202,7 +249,7 @@ async function ritamRequest<T>(endpoint: string, options: RITAMRequestOptions = 
 
 async function exchangeGoogleTokenWithRITAM(idToken: string): Promise<AppSession> {
   const data = await ritamRequest<RITAMAuthResponse>('/api/auth/google', {
-    body: { credential: idToken, consent: true },
+    body: { credential: idToken, consent: "yes" },
     method: 'POST',
   });
 
@@ -437,14 +484,21 @@ export default function App() {
     setGoogleSignInMessage('Starting Google sign-in...');
 
     try {
+      const googleIdentity = await getGoogleIdentityToken();
+      const session = await exchangeGoogleTokenWithRITAM(googleIdentity.idToken);
+      const displayName = 
+        googleIdentity.displayName ?? getSessionDisplayName(session) ?? 'RITAM student';
+
       const idToken = await getGoogleIdentityToken();
-      const session = await exchangeGoogleTokenWithRITAM(idToken);
 
       await saveRITAMSessionToken(session.accessToken);
       const syncedPractices = await fetchRITAMMandalas(session.accessToken);
       setPractices(syncedPractices);
-      await AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(syncedPractices));
-      setSavedName(getSessionDisplayName(session) ?? 'RITAM student');
+      await Promise.all([
+        AsyncStorage.setItem(PRACTICES_STORAGE_KEY, JSON.stringify(syncedPractices)),
+        AsyncStorage.setItem(USER_NAME_STORAGE_KEY, displayName),
+      ]);
+      setSavedName(displayName);
       setGoogleSignInMessage('Signed in. Practice sync can now use your RITAM session.')
     } catch (error) {
       setGoogleSignInMessage(
