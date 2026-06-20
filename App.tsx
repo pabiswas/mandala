@@ -292,7 +292,7 @@ function normalizeRITAMMandala(mandala: RITAMMandala): Practice {
 }
 
 async function fetchRITAMMandalas(sessionToken: string) {
-  const data = await ritamRequest<RITAMMandalasResponse>('/api/mandalas', {
+  const data = await ritamRequest<RITAMMandalasResponse>(`/api/mandalas?today=${getLocalDateKey()}`, {
     token: sessionToken,
   });
 
@@ -762,14 +762,23 @@ export default function App() {
                 </Text>
               </Pressable>
 
-              <Pressable>
+              <Pressable
+                accessibilityRole='button'
+                accessibilityState={{ selected: practiceLayout === 'stack' }}
+                onPress={() => setPracticeLayout('stack')}
+                style={({ pressed }) => [
+                  styles.layoutToggleButton,
+                  practiceLayout === 'stack' && styles.layoutToggleButtonActive,
+                  pressed && styles.pressed,
+                ]}
+              >
                 <Text
                   style={[
                     styles.layoutToggleText,
                     practiceLayout === 'stack' && styles.layoutToggleTextActive,
                   ]}
                 >
-                  Stack todo
+                  Stack
                 </Text>
               </Pressable>
               </View>
