@@ -43,7 +43,7 @@ type Practice = {
   visibility?: string;
 };
 
-type PracticeLayout = 'list' | 'stack';
+type PracticeLayout = 'list' | 'stack' | 'deck';
 
 type AppSession = {
   accessToken: string;
@@ -402,7 +402,13 @@ export default function App() {
 
   const canContinue = name.trim().length > 0;
   const canCreatePractice = practiceName.trim().length > 0;
-  const stackedPracticeCardWidth = Math.max(220, Math.min(windowWidth - 96, 392) - STACKED_PRACTICE_CARD_EDGE_INSET * 2);
+  const stackedPracticeCardWidth = Math.max(
+    220,
+    Math.min(windowWidth - 96, 392) - STACKED_PRACTICE_CARD_EDGE_INSET * 2
+  );
+  const deckPracticeCardWidth = Math.max(220, stackedPracticeCardWidth - 52);
+  const swipePracticeCardWidth =
+    practiceLayout === 'deck' ? deckPracticeCardWidth : stackedPracticeCardWidth;
   // const canSignInWithGoogle = hasAcceptedPolicy && (__DEV__ || Boolean(authConfig?.policy_url)) && !isLoadingAuthConfig;
   const canSignInWithGoogle = true;
   const pendingDeletePractice = practices.find((practice) => practice.id === pendingDeletePracticeId);
@@ -837,7 +843,27 @@ export default function App() {
                     practiceLayout === 'stack' && styles.layoutToggleTextActive,
                   ]}
                 >
-                  Stack
+                  Cards
+                </Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole='button'
+                accessibilityState={{ selected: practiceLayout === 'deck' }}
+                onPress={() => setPracticeLayout('deck')}
+                style={({ pressed }) => [
+                  styles.layoutToggleButton,
+                  practiceLayout === 'deck' && styles.layoutToggleButtonActive,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.layoutToggleText,
+                    practiceLayout === 'deck' && styles.layoutToggleTextActive,
+                  ]}
+                >
+                  Deck
                 </Text>
               </Pressable>
               </View>
@@ -848,9 +874,12 @@ export default function App() {
                 <Text style={styles.emptyGardenFlower}>🌱</Text>
                 <Text style={styles.helperText}>Your garden is empty. Start a practice to see it bloom here.</Text>
               </View>
-            ) : practiceLayout === 'stack' ? (
+            ) : practiceLayout === 'stack' || practiceLayout === 'deck' ? (
               <ScrollView 
-                contentContainerStyle={styles.stackedPracticeTrack}
+                contentContainerStyle={[
+                  styles.stackedPracticeTrack,
+                  practiceLayout === 'deck' && styles.deckPracticeTrack,
+                ]}
                 decelerationRate="fast"
                 directionalLockEnabled
                 disableIntervalMomentum
@@ -865,6 +894,7 @@ export default function App() {
                     key={practice.id}
                     cardWidth={stackedPracticeCardWidth}
                     index={index}
+                    isDeck={practiceLayout === 'deck'}
                     isSaving={isSaving}
                     onCompleteToday={completePracticeToday}
                     onDelete={confirmDeletePractice}
@@ -1163,6 +1193,7 @@ function PracticeCard({
 function StackedPracticeCard({
   cardWidth,
   index,
+  isDeck = false,
   isSaving,
   onCompleteToday,
   onDelete,
@@ -1170,6 +1201,7 @@ function StackedPracticeCard({
 }: {
   cardWidth: number;
   index: number;
+  isDeck?: boolean;
   isSaving: boolean;
   onCompleteToday: (practiceId: string) => void;
   onDelete: (practiceId: string) => void;
@@ -1181,57 +1213,69 @@ function StackedPracticeCard({
   return (
     <View
       accessibilityLabel={`${practice.name}, card ${index + 1}`}
-      style={[styles.stackedPracticeCard, { width: cardWidth}]}
+      style={[
+        styles.stackedPracticeCard,
+        isDeck && styles.deckPracticeFrame,
+        { width: cardWidth}]}
     >
-      <View style={styles.stackedPracticeBloomFrame}>
-        <MandalaBloom 
-          completedDays={completedDays}
-          durationDays={practice.durationDays}
-          isCompletedToday={isCompletedToday}
-          size={160}
-        />
-      </View>
+      {isDeck ? (
+        <>
+          <View style={[styles.deckPracticeUnderlay, styles.deckPracticeUnderlayBack]} />
+          <View style={styles.deckPracticeUnderlay}/>
+        </>
+      ) : null}
 
-      <Text style={styles.stackedPracticeName}>{practice.name}</Text>
-      <Text style={styles.stackedPracticeMeta}>
-        {startedAt ? `Started ${startedAt}` : 'Synced mandala'} {'\u00B7'} {practice.daysCompleted} of{' '}
-        {practice.durationDays} days complete
-      </Text>
-      <Text style={styles.practiceStatus}>{statusText}</Text>
+      <View style={[styles.stackedPracticeCard, isDeck && styles.deckPracticeTrack]}>
+        <View style={styles.stackedPracticeBloomFrame}>
+          <MandalaBloom 
+            completedDays={completedDays}
+            durationDays={practice.durationDays}
+            isCompletedToday={isCompletedToday}
+            size={160}
+          />
+        </View>
 
-      <View style={styles.stackedActionRow}>
-        <Pressable
-          accessibilityHint={statusText}
-          accessibilityRole='button'
-          accessibilityState={{disabled: !canCompleteToday}}
-          disabled={!canCompleteToday}
-          onPress={() => onCompleteToday(practice.id)}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            styles.stackedActionButton,
-            !canCompleteToday && styles.primaryButtonDisabled,
-            pressed && canCompleteToday && styles.pressed,
-          ]}
-        >
-          <Text style={styles.primaryButtonText}>
-            {isCompletedToday ? 'Bloomed today' : 'Mark today complete'}
-          </Text>
-        </Pressable>
+        <Text style={styles.stackedPracticeName}>{practice.name}</Text>
+        <Text style={styles.stackedPracticeMeta}>
+          {startedAt ? `Started ${startedAt}` : 'Synced mandala'} {'\u00B7'} {practice.daysCompleted} of{' '}
+          {practice.durationDays} days complete
+        </Text>
+        <Text style={styles.practiceStatus}>{statusText}</Text>
 
-        <Pressable
-          accessibilityHint={`Delete ${practice.name}`}
-          accessibilityRole='button'
-          disabled={isSaving}
-          onPress={() => onDelete(practice.id)}
-          style={({ pressed }) => [
-            styles.secondaryButton,
-            styles.stackedDeleteButton,
-            isSaving && styles.deleteButtonDisabled,
-            pressed && !isSaving && styles.pressed,
-          ]}
-        >
-          <Text style={styles.secondaryButtonText}>Delete</Text>
-        </Pressable>
+        <View style={styles.stackedActionRow}>
+          <Pressable
+            accessibilityHint={statusText}
+            accessibilityRole='button'
+            accessibilityState={{disabled: !canCompleteToday}}
+            disabled={!canCompleteToday}
+            onPress={() => onCompleteToday(practice.id)}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              styles.stackedActionButton,
+              !canCompleteToday && styles.primaryButtonDisabled,
+              pressed && canCompleteToday && styles.pressed,
+            ]}
+          >
+            <Text style={styles.primaryButtonText}>
+              {isCompletedToday ? 'Bloomed today' : 'Mark today complete'}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityHint={`Delete ${practice.name}`}
+            accessibilityRole='button'
+            disabled={isSaving}
+            onPress={() => onDelete(practice.id)}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              styles.stackedDeleteButton,
+              isSaving && styles.deleteButtonDisabled,
+              pressed && !isSaving && styles.pressed,
+            ]}
+          >
+            <Text style={styles.secondaryButtonText}>Delete</Text>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -1760,6 +1804,39 @@ const styles = StyleSheet.create({
     gap: STACKED_PRACTICE_CARD_GAP,
     // paddingHorizontal: STACKED_PRACTICE_CARD_EDGE_INSET,
   },
+  deckPracticeTrack: {
+    paddingBottom: 20,
+  },
+  stackedPracticeFrame: {
+    position: 'relative',
+  },
+  deckPracticeFrame: {
+    paddingBottom: 18,
+    paddingRight: 40,
+  },
+  deckPracticeUnderlay: {
+    backgroundColor: theme.background,
+    borderColor: theme.rule,
+    borderRadius: 18,
+    borderWidth: 1,
+    bottom: 8,
+    left: 18,
+    position: 'absolute',
+    right: 18,
+    shadowColor: '#4A2F15',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
+    top: 10,
+    transform: [{ rotate: '1.2deg' }],
+  },
+  deckPracticeUnderlayBack: {
+    bottom: 0,
+    left: 32,
+    right: 4,
+    top: 20,
+    transform: [{ rotate: '2.1deg' }],
+  },
   stackedPracticeList: {
     paddingTop: 2,
   },
@@ -1776,6 +1853,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.12,
     shadowRadius: 16,
+  },
+  deckPracticeCard: {
+    borderColor: theme.marigold,
+    elevation: 5,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.2,
+    shadowRadius: 22,
+    transform: [{ rotate: '-0.5deg' }],
   },
   stackedPracticeBloomFrame: {
     alignItems: 'center',
