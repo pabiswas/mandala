@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
  } from 'react-native';
  import appConfig from './app.json';
@@ -23,6 +24,8 @@ const USER_NAME_STORAGE_KEY = 'mandala:userName';
 const PRACTICES_STORAGE_KEY = 'mandala:practices';
 const RITAM_SESSION_STORAGE_KEY = 'ritam_session';
 const RITAM_YOGA_API_BASE_URL = 'https://ritamyoga.in';
+const STACKED_PRACTICE_CARD_GAP = 12;
+const STACKED_PRACTICE_CARD_EDGE_INSET = 1;
 const GOOGLE_DISCOVERY = {
   authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
 };
@@ -332,6 +335,7 @@ async function endRITAMMandala(sessionToken: string, mandalaId: string) {
 }
 
 export default function App() {
+  const { width: windowWidth } = useWindowDimensions();
   const [name, setName] = useState('');
   const [savedName, setSavedName] = useState<string | null>(null);
   const [practiceName, setPracticeName] = useState('');
@@ -351,6 +355,7 @@ export default function App() {
 
   const canContinue = name.trim().length > 0;
   const canCreatePractice = practiceName.trim().length > 0;
+  const stackedPracticeCardWidth = Math.max(220, Math.min(windowWidth - 96, 392) - STACKED_PRACTICE_CARD_EDGE_INSET * 2);
   // const canSignInWithGoogle = hasAcceptedPolicy && (__DEV__ || Boolean(authConfig?.policy_url)) && !isLoadingAuthConfig;
   const canSignInWithGoogle = true;
   const pendingDeletePractice = practices.find((practice) => practice.id === pendingDeletePracticeId);
@@ -783,16 +788,28 @@ export default function App() {
               </Pressable>
               </View>
             </View>
+
             {practices.length === 0 ? (
               <View style={styles.emptyGarden}>
                 <Text style={styles.emptyGardenFlower}>🌱</Text>
                 <Text style={styles.helperText}>Your garden is empty. Start a practice to see it bloom here.</Text>
               </View>
             ) : practiceLayout === 'stack' ? (
-              <View style={styles.stackedPracticeList}>
+              <ScrollView 
+                contentContainerStyle={styles.stackedPracticeTrack}
+                decelerationRate="fast"
+                directionalLockEnabled
+                disableIntervalMomentum
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                snapToAlignment='start'
+                snapToInterval={stackedPracticeCardWidth + STACKED_PRACTICE_CARD_GAP}
+                style={styles.stackedPracticeScroller}
+              >
                 {practices.map((practice, index) => (
                   <StackedPracticeCard 
                     key={practice.id}
+                    cardWidth={stackedPracticeCardWidth}
                     index={index}
                     isSaving={isSaving}
                     onCompleteToday={completePracticeToday}
@@ -800,7 +817,7 @@ export default function App() {
                     practice={practice}
                   />
                 ))}
-              </View>
+              </ScrollView>
             ) : (
               <View style={styles.practiceList}>
                 {practices.map(practice => (
@@ -1090,12 +1107,14 @@ function PracticeCard({
 }
 
 function StackedPracticeCard({
+  cardWidth,
   index,
   isSaving,
   onCompleteToday,
   onDelete,
   practice,
 }: {
+  cardWidth: number;
   index: number;
   isSaving: boolean;
   onCompleteToday: (practiceId: string) => void;
@@ -1106,7 +1125,10 @@ function StackedPracticeCard({
     getPracticeDisplayState(practice, isSaving);
   
   return (
-    <View style={[styles.stackedPracticeCard, index > 0 && styles.stackedPracticeCardOverlap]}>
+    <View
+      accessibilityLabel={`${practice.name}, card ${index + 1}`}
+      style={[styles.stackedPracticeCard, { width: cardWidth}]}
+    >
       <View style={styles.stackedPracticeBloomFrame}>
         <MandalaBloom 
           completedDays={completedDays}
@@ -1118,7 +1140,7 @@ function StackedPracticeCard({
 
       <Text style={styles.stackedPracticeName}>{practice.name}</Text>
       <Text style={styles.stackedPracticeMeta}>
-        {startedAt ? `Started ${startedAt}` : 'Synced mandala'} . {practice.daysCompleted} of{' '}
+        {startedAt ? `Started ${startedAt}` : 'Synced mandala'} {'\u00B7'} {practice.daysCompleted} of{' '}
         {practice.durationDays} days complete
       </Text>
       <Text style={styles.practiceStatus}>{statusText}</Text>
@@ -1676,6 +1698,14 @@ const styles = StyleSheet.create({
   practiceList: {
     gap: 12,
   },
+  stackedPracticeScroller: {
+    paddingTop: 2,
+    width: '100%',
+  },
+  stackedPracticeTrack: {
+    gap: STACKED_PRACTICE_CARD_GAP,
+    // paddingHorizontal: STACKED_PRACTICE_CARD_EDGE_INSET,
+  },
   stackedPracticeList: {
     paddingTop: 2,
   },
@@ -1692,9 +1722,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.12,
     shadowRadius: 16,
-  },
-  stackedPracticeCardOverlap: {
-    marginTop: -6,
   },
   stackedPracticeBloomFrame: {
     alignItems: 'center',
