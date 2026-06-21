@@ -1320,6 +1320,8 @@ function DeckPracticePreviewCard({
   practice: Practice;
   variant: 'middle' | 'back';
 }) {
+  const { completedDays, isCompletedToday } = getPracticeDisplayState(practice, false);
+
   return (
     <View
       pointerEvents='none'
@@ -1328,9 +1330,24 @@ function DeckPracticePreviewCard({
         variant === 'back' && styles.deckPracticePreviewCardBack,
       ]}
     >
-      <Text numberOfLines={1} style={styles.deckPracticePreviewName}>
-        {practice.name}
-      </Text>
+      <View
+        style={[
+          styles.deckPracticePreviewContent,
+          variant === 'back' && styles.deckPracticePreviewContentBack,
+        ]}
+      >
+        <View style={styles.deckPracticePreviewBloom}>
+          <MandalaBloom 
+            completedDays={completedDays}
+            durationDays={practice.durationDays}
+            isCompletedToday={isCompletedToday}
+            size={120}
+          />
+        </View>
+        <Text numberOfLines={1} style={styles.deckPracticePreviewName}>
+          {practice.name}
+        </Text>
+      </View>
     </View>
   );
 }
@@ -1983,13 +2000,33 @@ const styles = StyleSheet.create({
     top: 20,
     transform: [{ rotate: '2.1deg' }],
   },
+  deckPracticePreviewContent: {
+    alignItems: 'center',
+    gap: 10,
+    opacity: 0.55,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  deckPracticePreviewContentBack: {
+    opacity: 0.4,
+  },
+  deckPracticePreviewBloom: {
+    alignItems: 'center',
+    backgroundColor: theme.backgroundElement,
+    borderColor: theme.rule,
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 140,
+    justifyContent: 'center',
+    width: 140,
+  },
   deckPracticePreviewName: {
     color: theme.textSecondary,
     fontFamily: Platform.select({ ios: 'ui-serif', default: 'serif' }),
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
-    lineHeight: 24,
-    marginLeft: 120,
+    lineHeight: 26,
+    textAlign: 'center',
   },
   stackedPracticeList: {
     paddingTop: 2,
