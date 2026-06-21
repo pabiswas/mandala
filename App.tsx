@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AuthSession from 'expo-auth-session';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { 
   Animated,
   KeyboardAvoidingView,
@@ -1221,11 +1221,21 @@ function DeckPracticeDeck({
   practices: Practice[];
 }) {
   const drag = useRef(new Animated.ValueXY()).current;
+  const enter = useRef(new Animated.Value(0)).current;
   const currentPractice = practices[currentIndex];
   const nextPractice = practices[currentIndex + 1];
   const thirdPractice = practices[currentIndex + 2];
   const previousPractice = practices[currentIndex - 1];
   const swipeThreshold = Math.min(cardWidth * 0.28, 110);
+
+  useLayoutEffect(() => {
+    enter.setValue(0);
+    Animated.timing(enter, {
+      duration: 220,
+      toValue: 1,
+      useNativeDriver: false,
+    }).start();
+  }, [currentIndex, enter]);
 
   const resetDrag = () => {
     Animated.spring(drag, {
@@ -1284,6 +1294,10 @@ function DeckPracticeDeck({
     inputRange: [-cardWidth, 0, cardWidth],
     outputRange: ['-8deg', '0deg', '8deg'],
   });
+  const enterScale = enter.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.94, 1],
+  });
 
   return (
     <View style={[styles.deckPracticeDeck, { width: cardWidth }]}>
@@ -1296,7 +1310,13 @@ function DeckPracticeDeck({
       <Animated.View
         {...panResponder.panHandlers}
         style={{
-          transform: [{ translateX: drag.x}, { translateY: drag.y }, { rotate }],
+          opacity: enter,
+          transform: [
+            { translateX: drag.x},
+            { translateY: drag.y }, 
+            { rotate },
+            { scale: enterScale },
+          ],
         }}
       >
         <StackedPracticeCard 
