@@ -2,10 +2,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AuthSession from 'expo-auth-session';
 import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { 
+  Animated,
   KeyboardAvoidingView,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   SafeAreaView,
@@ -387,6 +389,7 @@ export default function App() {
   const [savedName, setSavedName] = useState<string | null>(null);
   const [practiceName, setPracticeName] = useState('');
   const [practices, setPractices] = useState<Practice[]>([]);
+  const [deckPracticeIndex, setDeckPracticeIndex] = useState(0);
   const [practiceLayout, setPracticeLayout] = useState<PracticeLayout>('list');
   const [authConfig, setAuthConfig] = useState<RITAMAuthConfigResponse | null>(null);
   const [hasAcceptedPolicy, setHasAcceptedPolicy] = useState(false);
@@ -442,6 +445,10 @@ export default function App() {
 
     loadSavedData();
   }, []);
+
+  useEffect(() => {
+    setDeckPracticeIndex((currentIndex) => Math.min(currentIndex, Math.max(practices.length - 1, 0)));
+  }, [practices.length]);
 
   // useEffect(() => {
   //   async function loadAuthConfig() {
@@ -874,12 +881,19 @@ export default function App() {
                 <Text style={styles.emptyGardenFlower}>🌱</Text>
                 <Text style={styles.helperText}>Your garden is empty. Start a practice to see it bloom here.</Text>
               </View>
-            ) : practiceLayout === 'stack' || practiceLayout === 'deck' ? (
+            ) : practiceLayout === 'deck' ? (
+              <DeckPracticeDeck
+                cardWidth={stackedPracticeCardWidth}
+                currentIndex={deckPracticeIndex}
+                isSaving={isSaving}
+                onCompleteToday={completePracticeToday}
+                onDelete={confirmDeletePractice}
+                onIndexChange={setDeckPracticeIndex}
+                practices={practices}
+              />
+            ) : practiceLayout === 'stack' ? (
               <ScrollView 
-                contentContainerStyle={[
-                  styles.stackedPracticeTrack,
-                  practiceLayout === 'deck' && styles.deckPracticeTrack,
-                ]}
+                contentContainerStyle={styles.stackedPracticeTrack}
                 decelerationRate="fast"
                 directionalLockEnabled
                 disableIntervalMomentum
@@ -894,7 +908,6 @@ export default function App() {
                     key={practice.id}
                     cardWidth={stackedPracticeCardWidth}
                     index={index}
-                    isDeck={practiceLayout === 'deck'}
                     isSaving={isSaving}
                     onCompleteToday={completePracticeToday}
                     onDelete={confirmDeletePractice}
@@ -1190,6 +1203,138 @@ function PracticeCard({
   );
 }
 
+function DeckPracticeDeck({
+  cardWidth,
+  currentIndex,
+  isSaving,
+  onCompleteToday,
+  onDelete,
+  onIndexChange,
+  practices,
+}: {
+  cardWidth: number;
+  currentIndex: number;
+  isSaving: boolean;
+  onCompleteToday: (practiceId: string) => void;
+  onDelete: (practiceId: string) => void;
+  onIndexChange: (index: number) => void;
+  practices: Practice[];
+}) {
+  const drag = useRef(new Animated.ValueXY()).current;
+  const currentPractice = practices[currentIndex];
+  const nextPractice = practices[currentIndex + 1];
+  const thirdPractice = practices[currentIndex + 2];
+  const previousPractice = practices[currentIndex - 1];
+  const swipeThreshold = Math.min(cardWidth * 0.28, 110);
+
+  const resetDrag = () => {
+    Animated.spring(drag, {
+      friction: 7,
+      tension: 80,
+      toValue: { x: 0, y: 0 },
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const completeSwipe = (indexDelta: 1 | -1, flyDirection: 1 | -1, y: number) => {
+    const nextIndex = currentIndex + indexDelta;
+
+    if (nextIndex < 0 || nextIndex >= practices.length) {
+      resetDrag();
+      return;
+    }
+
+    Animated.timing(drag, {
+      duration: 190,
+      toValue: { x: flyDirection * (cardWidth + 120), y },
+      useNativeDriver: false,
+    }).start(() => {
+      drag.setValue({ x: 0, y: 0});
+      onIndexChange(nextIndex);
+    });
+  };
+
+  const panResponder = PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gestureState) =>
+      Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+    onPanResponderMove: Animated.event([null, { dx: drag.x, dy: drag.y }], {
+      useNativeDriver: false,
+    }),
+    onPanResponderRelease: (_, gestureState) => {
+      if (gestureState.dx > swipeThreshold) {
+        completeSwipe(-1, 1, gestureState.dy);
+        return;
+      }
+
+      if (gestureState.dx < -swipeThreshold) {
+        completeSwipe(1, -1, gestureState.dy);
+        return;
+      }
+
+      resetDrag();
+    },
+    onPanResponderTerminate: resetDrag,
+  });
+
+  if (!currentPractice) {
+    return null;
+  }
+
+  const rotate = drag.x.interpolate({
+    inputRange: [-cardWidth, 0, cardWidth],
+    outputRange: ['-8deg', '-0.5deg', '8deg'],
+  });
+
+  return (
+    <View style={[styles.deckPracticeCard, { width: cardWidth }]}>
+      {thirdPractice ? <DeckPracticePreviewCard practice={thirdPractice} variant="back" /> : null}
+      {nextPractice ? <DeckPracticePreviewCard practice={nextPractice} variant="middle" /> : null}
+      {!nextPractice && previousPractice ? (
+        <DeckPracticePreviewCard practice={previousPractice} variant="middle" />
+      ) : null}
+
+      <Animated.View
+        {...panResponder.panHandlers}
+        style={{
+          transform: [{ translateX: drag.x}, { translateY: drag.y }, { rotate }],
+        }}
+      >
+        <StackedPracticeCard 
+          cardWidth={cardWidth}
+          index={currentIndex}
+          isDeck
+          isSaving={isSaving}
+          onCompleteToday={onCompleteToday}
+          onDelete={onDelete}
+          practice={currentPractice}
+        />
+      </Animated.View>
+    </View>
+  );
+}
+
+function DeckPracticePreviewCard({
+  practice,
+  variant,
+}: {
+  practice: Practice;
+  variant: 'middle' | 'back';
+}) {
+  return (
+    <View
+      pointerEvents='none'
+      style={[
+        styles.deckPracticPreviewCard,
+        variant === 'back' && styles.deckPracticePreviewCardBack,
+      ]}
+    >
+      <Text numberOfLines={1} style={styles.deckPracticePreviewName}>
+        {practice.name}
+      </Text>
+    </View>
+  );
+}
+
 function StackedPracticeCard({
   cardWidth,
   index,
@@ -1218,14 +1363,8 @@ function StackedPracticeCard({
         isDeck && styles.deckPracticeFrame,
         { width: cardWidth}]}
     >
-      {isDeck ? (
-        <>
-          <View style={[styles.deckPracticeUnderlay, styles.deckPracticeUnderlayBack]} />
-          <View style={styles.deckPracticeUnderlay}/>
-        </>
-      ) : null}
 
-      <View style={[styles.stackedPracticeCard, isDeck && styles.deckPracticeTrack]}>
+      <View style={[styles.stackedPracticeCard, isDeck && styles.deckPracticeCard]}>
         <View style={styles.stackedPracticeBloomFrame}>
           <MandalaBloom 
             completedDays={completedDays}
@@ -1804,8 +1943,10 @@ const styles = StyleSheet.create({
     gap: STACKED_PRACTICE_CARD_GAP,
     // paddingHorizontal: STACKED_PRACTICE_CARD_EDGE_INSET,
   },
-  deckPracticeTrack: {
+  deckPracticeDeck: {
+    alignSelf: 'center',
     paddingBottom: 20,
+    position: 'relative',
   },
   stackedPracticeFrame: {
     position: 'relative',
@@ -1814,13 +1955,17 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     paddingRight: 40,
   },
-  deckPracticeUnderlay: {
+  deckPracticPreviewCard: {
     backgroundColor: theme.background,
     borderColor: theme.rule,
     borderRadius: 18,
     borderWidth: 1,
     bottom: 8,
-    left: 18,
+    justifyContent: 'flex-start',
+    left: 24,
+    opacity: 0.96,
+    paddingHorizontal: 18,
+    paddingTop: 20,
     position: 'absolute',
     right: 18,
     shadowColor: '#4A2F15',
@@ -1830,12 +1975,21 @@ const styles = StyleSheet.create({
     top: 10,
     transform: [{ rotate: '1.2deg' }],
   },
-  deckPracticeUnderlayBack: {
+  deckPracticePreviewCardBack: {
     bottom: 0,
-    left: 32,
+    left: 42,
+    opacity: 0.82,
     right: 4,
     top: 20,
     transform: [{ rotate: '2.1deg' }],
+  },
+  deckPracticePreviewName: {
+    color: theme.textSecondary,
+    fontFamily: Platform.select({ ios: 'ui-serif', default: 'serif' }),
+    fontSize: 18,
+    fontWeight: '600',
+    lineHeight: 24,
+    marginLeft: 120,
   },
   stackedPracticeList: {
     paddingTop: 2,
