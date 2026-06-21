@@ -1286,7 +1286,7 @@ function DeckPracticeDeck({
   });
 
   return (
-    <View style={[styles.deckPracticeCard, { width: cardWidth }]}>
+    <View style={[styles.deckPracticeDeck, { width: cardWidth }]}>
       {thirdPractice ? <DeckPracticePreviewCard practice={thirdPractice} variant="back" /> : null}
       {nextPractice ? <DeckPracticePreviewCard practice={nextPractice} variant="middle" /> : null}
       {!nextPractice && previousPractice ? (
@@ -1324,7 +1324,7 @@ function DeckPracticePreviewCard({
     <View
       pointerEvents='none'
       style={[
-        styles.deckPracticPreviewCard,
+        styles.deckPracticePreviewCard,
         variant === 'back' && styles.deckPracticePreviewCardBack,
       ]}
     >
@@ -1359,7 +1359,7 @@ function StackedPracticeCard({
     <View
       accessibilityLabel={`${practice.name}, card ${index + 1}`}
       style={[
-        styles.stackedPracticeCard,
+        styles.stackedPracticeFrame,
         isDeck && styles.deckPracticeFrame,
         { width: cardWidth}]}
     >
@@ -1955,7 +1955,7 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     paddingRight: 40,
   },
-  deckPracticPreviewCard: {
+  deckPracticePreviewCard: {
     backgroundColor: theme.background,
     borderColor: theme.rule,
     borderRadius: 18,
