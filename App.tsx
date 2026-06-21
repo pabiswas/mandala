@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as WebBrowser from 'expo-web-browser';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { 
+  AccessibilityInfo,
   Animated,
   KeyboardAvoidingView,
   Modal,
@@ -1222,6 +1223,7 @@ function DeckPracticeDeck({
 }) {
   const drag = useRef(new Animated.ValueXY()).current;
   const enter = useRef(new Animated.Value(0)).current;
+  const [isNavigating, setIsNavigating] = useState(false);
   const currentPractice = practices[currentIndex];
   const nextPractice = practices[currentIndex + 1];
   const thirdPractice = practices[currentIndex + 2];
@@ -1247,6 +1249,10 @@ function DeckPracticeDeck({
   };
 
   const completeSwipe = (indexDelta: 1 | -1, flyDirection: 1 | -1, y: number) => {
+    if (isNavigating) {
+      return;
+    }
+
     const nextIndex = currentIndex + indexDelta;
 
     if (nextIndex < 0 || nextIndex >= practices.length) {
@@ -1254,19 +1260,32 @@ function DeckPracticeDeck({
       return;
     }
 
+    setIsNavigating(true);
     Animated.timing(drag, {
       duration: 190,
       toValue: { x: flyDirection * (cardWidth + 120), y },
       useNativeDriver: false,
     }).start(() => {
+      enter.setValue(0),
       drag.setValue({ x: 0, y: 0});
       onIndexChange(nextIndex);
+      setIsNavigating(false);
+      AccessibilityInfo.announceForAccessibility(
+        `Practice ${nextIndex + 1} of ${practices.length}`,
+      );
     });
   };
 
+  const canGoPrev = currentIndex > 0;
+  const canGoNext = currentIndex < practices.length - 1;
+  const goPrev = () => completeSwipe(-1, 1, 0);
+  const goNext = () => completeSwipe(1, -1, 0);
+
   const panResponder = PanResponder.create({
     onMoveShouldSetPanResponder: (_, gestureState) =>
-      Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+      !isNavigating &&
+      Math.abs(gestureState.dx) > 10 &&
+      Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
     onPanResponderMove: Animated.event([null, { dx: drag.x, dy: drag.y }], {
       useNativeDriver: false,
     }),
@@ -1300,9 +1319,12 @@ function DeckPracticeDeck({
   });
 
   return (
-    <View style={[styles.deckPracticeDeck, { width: cardWidth }]}>
+   <View style={styles.deckPractice}>
+    <View style={[styles.deckPracticeDeck, {width: cardWidth}]}>
       {thirdPractice ? <DeckPracticePreviewCard practice={thirdPractice} variant="back" /> : null}
-      {nextPractice ? <DeckPracticePreviewCard practice={nextPractice} variant="middle" /> : null}
+      {nextPractice ? (
+        <DeckPracticePreviewCard practice={nextPractice} variant="middle" />
+      ) : null}
       {!nextPractice && previousPractice ? (
         <DeckPracticePreviewCard practice={previousPractice} variant="middle" />
       ) : null}
@@ -1329,6 +1351,47 @@ function DeckPracticeDeck({
           practice={currentPractice}
         />
       </Animated.View>
+    </View>
+
+    <View style={[styles.deckPracticeControls, { width: cardWidth }]}>
+      <Pressable
+        accessibilityLabel='Previous practice'
+        accessibilityRole='button'
+        accessibilityState={{ disabled: !canGoPrev || isNavigating }}
+        disabled={!canGoPrev || isNavigating }
+        onPress={goPrev}
+        style={({ pressed }) => [
+          styles.deckPracticeNavButton,
+          (!canGoPrev || isNavigating) && styles.deckPracticeNavButtonDisabled,
+          pressed && canGoPrev && !isNavigating && styles.pressed,
+        ]}
+      >
+        <Text style={styles.deckPracticeNavButtonText}>{'\u2039'}</Text>
+      </Pressable>
+
+      <Text
+        accessibilityLabel={`Practice ${currentIndex + 1} of ${practices.length}`}
+        accessibilityLiveRegion='polite'
+        style={styles.deckPracticeCounter}
+      >
+        {currentIndex + 1} of {practices.length}
+      </Text>
+
+      <Pressable
+        accessibilityLabel='Next practice'
+        accessibilityRole='button'
+        accessibilityState={{ disabled: !canGoNext || isNavigating }}
+        disabled={!canGoNext || isNavigating}
+        onPress={goNext}
+        style={({ pressed }) => [
+          styles.deckPracticeNavButton,
+          (!canGoNext || isNavigating) && styles.deckPracticeNavButtonDisabled,
+          pressed && canGoNext && !isNavigating && styles.pressed,
+        ]}
+      >
+        <Text style={styles.deckPracticeNavButtonText}>{'\u203a'}</Text>
+      </Pressable>
+      </View>
     </View>
   );
 }
@@ -1979,6 +2042,46 @@ const styles = StyleSheet.create({
   stackedPracticeTrack: {
     gap: STACKED_PRACTICE_CARD_GAP,
     // paddingHorizontal: STACKED_PRACTICE_CARD_EDGE_INSET,
+  },
+  deckPractice: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 4,
+  },
+  deckPracticeControls: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 20,
+    paddingTop: 4,
+  },
+  deckPracticeNavButton: {
+    alignItems: 'center',
+    backgroundColor: theme.background,
+    borderColor: theme.rule,
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  deckPracticeNavButtonDisabled: {
+    opacity: 0.4,
+  },
+  deckPracticeNavButtonText: {
+    color: theme.marigoldDeep,
+    fontSize: 26,
+    fontWeight: '700',
+    lineHeight: 30,
+  },
+  deckPracticeCounter: {
+    color: theme.textSecondary,
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    lineHeight: 18,
+    minWidth: 72,
+    textAlign: 'center',
   },
   deckPracticeDeck: {
     alignSelf: 'center',
