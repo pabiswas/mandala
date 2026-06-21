@@ -1282,7 +1282,7 @@ function DeckPracticeDeck({
 
   const rotate = drag.x.interpolate({
     inputRange: [-cardWidth, 0, cardWidth],
-    outputRange: ['-8deg', '-0.5deg', '8deg'],
+    outputRange: ['-8deg', '0deg', '8deg'],
   });
 
   return (
