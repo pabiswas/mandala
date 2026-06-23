@@ -20,6 +20,7 @@ import {
   View,
  } from 'react-native';
  import appConfig from './app.json';
+ import { MandalaBloom } from './MandalaBloom';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
  WebBrowser.maybeCompleteAuthSession();
@@ -1520,7 +1521,7 @@ function StackedPracticeCard({
   );
 }
 
-function MandalaBloom({
+function MandalaBloo_ToDelete({
   completedDays,
   durationDays,
   isCompletedToday,
