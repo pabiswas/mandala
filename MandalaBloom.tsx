@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { AccessibilityInfo, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { AccessibilityInfo, Animated, View } from "react-native";
 import Svg, {
     Circle,
     Defs,
@@ -9,6 +9,9 @@ import Svg, {
     Stop,
     Text as SvgText,
 } from 'react-native-svg';
+
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 const MANDALA_LENGTH = 48;
 
@@ -43,6 +46,20 @@ const RING_PETALS = RINGS.map((ring) => {
     };
 });
 
+/** Precomputed center positions for each petal day (used for glow placement). */
+const PETAL_CENTERS: Record<number, { cx: number; cy: number }> = {};
+for (const ring of RINGS) {
+    const step = 360 / ring.count;
+    for (let i = 0; i < ring.count; i++) {
+        const angleDeg = i * step + ring.offset - 90;
+        const angleRad = (angleDeg * Math.PI) / 180;
+        PETAL_CENTERS[ring.dayStart + i] = {
+            cx: Math.cos(angleRad) * ring.baseR,
+            cy: Math.sin(angleRad) * ring.baseR,
+        };
+    }
+}
+
 const STAGGER_MS = 110;
 const SETTLE_MS = 400;
 
@@ -73,6 +90,54 @@ export function MandalaBloom({
     const target = Math.max(0, Math.min(completedDays, MANDALA_LENGTH, displayDuration));
     const [lit, setLit] = useState(animate ? 0 : target);
 
+    // ── Bloom animation state ──────────────────────────────────────────
+    const bloomAnim = useRef(new Animated.Value(1)).current;
+    const prevTargetRef = useRef(target);
+    const [bloomingDay, setBloomingDay] = useState<number | null>(null);
+
+    // Detect when a new petal just bloomed (check-in happened this render)
+    useEffect(() => {
+        let cancelled = false;
+
+        if (target > prevTargetRef.current && isCompletedToday) {
+            const newDay = target;
+
+            // Set immediately so the AnimatedPath renders on the first frame
+            // (prevents a flash of the static bloomed petal before animation starts)
+            setBloomingDay(newDay);
+            bloomAnim.setValue(0);
+
+            AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
+                if (cancelled) return;
+
+                if (reduce) {
+                    // Skip animation, snap to final state
+                    bloomAnim.setValue(1);
+                    setBloomingDay(null);
+                    return;
+                }
+
+                Animated.spring(bloomAnim, {
+                    toValue: 1,
+                    friction: 5,
+                    tension: 50,
+                    useNativeDriver: false,
+                }).start(({ finished }) => {
+                    if (finished && !cancelled) {
+                        setBloomingDay(null);
+                    }
+                });
+            });
+        }
+
+        prevTargetRef.current = target;
+
+        return () => {
+            cancelled = true;
+        };
+    }, [target, isCompletedToday, bloomAnim]);
+
+    // ── Staggered mount animation (existing behaviour) ─────────────────
     useEffect(() => {
         let isMounted = true;
         let timers: ReturnType<typeof setTimeout>[] = [];
@@ -103,6 +168,29 @@ export function MandalaBloom({
         };
     }, [animate, target]);
 
+    // ── Bloom animation interpolations ─────────────────────────────────
+    // Petal: fades in from transparent, stroke pulses wide then settles
+    const bloomOpacity = bloomAnim.interpolate({
+        inputRange: [0, 0.35, 1],
+        outputRange: [0, 0.85, 1],
+    });
+    const bloomStrokeWidth = bloomAnim.interpolate({
+        inputRange: [0, 0.25, 0.55, 1],
+        outputRange: [1, 5, 3.2, 2.6],
+    });
+
+    // Glow: warm golden circle that expands outward and fades
+    const glowRadius = bloomAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [4, 26],
+    });
+    const glowOpacity = bloomAnim.interpolate({
+        inputRange: [0, 0.15, 0.5, 1],
+        outputRange: [0, 0.55, 0.2, 0],
+    });
+
+    const glowCenter = bloomingDay != null ? PETAL_CENTERS[bloomingDay] : null;
+
     return (
         <View
             accessibilityLabel={`${target} of ${displayDuration} mandala petals bloomed`}
@@ -132,12 +220,39 @@ export function MandalaBloom({
                 </RadialGradient>
             </Defs>
 
+            {/* Golden glow behind the blooming petal */}
+            {glowCenter && (
+                <AnimatedCircle
+                    cx={glowCenter.cx}
+                    cy={glowCenter.cy}
+                    fill="#F5C84F"
+                    opacity={glowOpacity}
+                    r={glowRadius}
+                />
+            )}
+
             {RING_PETALS.map((ring) => (
                 <G key={ring.name}>
                     {ring.petals.map((petal) => {
                         const isBloomed = petal.day <= lit;
                         const isToday = isCompletedToday && petal.day === target;
-                    
+                        const isNewBloom = bloomingDay === petal.day;
+
+                        // Blooming petal: use AnimatedPath with spring-driven opacity & stroke
+                        if (isNewBloom) {
+                            return (
+                                <AnimatedPath
+                                    d={petal.d}
+                                    fill={`url(#petal-grad-${ring.name})`}
+                                    key={petal.day}
+                                    opacity={bloomOpacity}
+                                    stroke="#1F6A6E"
+                                    strokeWidth={bloomStrokeWidth}
+                                    transform={petal.transform}
+                                />
+                            );
+                        }
+
                         return (
                             <Path
                                 d={petal.d}
