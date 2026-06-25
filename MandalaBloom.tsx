@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, View } from "react-native";
+import { AccessibilityInfo, Animated, Easing, View } from "react-native";
 import Svg, {
     Circle,
     Defs,
@@ -62,6 +62,9 @@ for (const ring of RINGS) {
 
 const STAGGER_MS = 110;
 const SETTLE_MS = 400;
+// A slow, delibrate glow for the freshly earned petal - long enough to read as
+// an accomplishment settling in rather than a quick pop.
+const BLOOM_MS = 1100;
 
 interface MandalaBloomProps {
     /** Petals kept (days checked in), 0..48. */
@@ -117,10 +120,10 @@ export function MandalaBloom({
                     return;
                 }
 
-                Animated.spring(bloomAnim, {
+                Animated.timing(bloomAnim, {
+                    duration: BLOOM_MS,
+                    easing: Easing.inOut(Easing.cubic),
                     toValue: 1,
-                    friction: 5,
-                    tension: 50,
                     useNativeDriver: false,
                 }).start(({ finished }) => {
                     if (finished && !cancelled) {
@@ -171,22 +174,22 @@ export function MandalaBloom({
     // ── Bloom animation interpolations ─────────────────────────────────
     // Petal: fades in from transparent, stroke pulses wide then settles
     const bloomOpacity = bloomAnim.interpolate({
-        inputRange: [0, 0.35, 1],
-        outputRange: [0, 0.85, 1],
+        inputRange: [0, 0.45, 1],
+        outputRange: [0, 0.9, 1],
     });
     const bloomStrokeWidth = bloomAnim.interpolate({
-        inputRange: [0, 0.25, 0.55, 1],
-        outputRange: [1, 5, 3.2, 2.6],
+        inputRange: [0, 0.4, 1],
+        outputRange: [1.4, 3, 2.6],
     });
 
     // Glow: warm golden circle that expands outward and fades
     const glowRadius = bloomAnim.interpolate({
         inputRange: [0, 1],
-        outputRange: [4, 26],
+        outputRange: [6, 30],
     });
     const glowOpacity = bloomAnim.interpolate({
-        inputRange: [0, 0.15, 0.5, 1],
-        outputRange: [0, 0.55, 0.2, 0],
+        inputRange: [0, 0.3, 0.65, 1],
+        outputRange: [0, 0.45, 0.5, 0],
     });
 
     const glowCenter = bloomingDay != null ? PETAL_CENTERS[bloomingDay] : null;
